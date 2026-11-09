@@ -176,6 +176,16 @@ virtualTerminalClient.set_object_pool_scaling(0, 480, 60);
 Without ECU-side scaling, an old 480 pool may only fill part of the logical 600
 area. 480 therefore remains the safe setting for unknown machines.
 
+## Diagnostics panel
+
+`MENU -> Terminal -> Diagnostics panel` turns on a panel left of the machine
+screen. The setting survives a restart. The panel refreshes once a second:
+CPU0/CPU1 is the current core load, CAN the estimated bus load, RAM/PSR the free
+memory in KiB, RXQ/TXQ the CAN queues and ERR the transmit/receive error counters.
+The first CPU reading appears after one full measuring interval. If CPU stays at
+`--`, an existing `build_<target>/sdkconfig` has run-time statistics disabled:
+rebuild the target with `./make_espVT.sh <target> force`.
+
 ## GNSS variants
 
 The `RTK` variant with a UM982 receives NMEA `GGA` and `RMC` over UART, shows the

@@ -24,6 +24,11 @@
 #include "esp_log.h"
 #include "esp_app_desc.h"
 #include "esp_heap_caps.h"
+#include "esp_timer.h"
+#include "driver/twai.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/idf_additions.h"
 
 #if ISOVT_ENABLE_AGISOSTACK
 #include "isobus/isobus/can_network_manager.hpp"
@@ -1749,13 +1754,16 @@ void draw_aux_button(std::vector<ScreenRect> &targets,
                      std::uint16_t object_id,
                      bool selected,
                      bool compatible,
+                     bool active = false,
                      lcd_panel::TextEncoding encoding = lcd_panel::TextEncoding::ISO8859_1)
 {
-    const std::uint16_t background = selected ? 0x05A8 : (compatible ? 0x31A6 : 0x7BEF);
+    constexpr std::uint16_t ACTIVE_INPUT = 0x07E0;
+    const std::uint16_t background = active ? ACTIVE_INPUT : (selected ? 0x05A8 : (compatible ? 0x31A6 : 0x7BEF));
     lcd_panel::fill_rect(x, y, width, height, background);
-    draw_outline(x, y, width, height, selected ? CHROME_TEXT : CHROME_BORDER, selected ? 3 : 1);
+    draw_outline(x, y, width, height, (selected || active) ? CHROME_TEXT : CHROME_BORDER,
+                 active ? 4 : (selected ? 3 : 1));
     lcd_panel::draw_text_sized(x + 68, y + (height - 14) / 2, 12, 14, label,
-                               compatible ? CHROME_TEXT : 0xBDF7,
+                               (compatible || active) ? CHROME_TEXT : 0xBDF7,
                                false, false, false, encoding);
     targets.push_back({
         .x = x,
@@ -2118,16 +2126,79 @@ void render_terminal_page(std::vector<ScreenRect> &targets)
                        data_mask_size,
                        vt_scene_renderer::TerminalAction::CycleDataMaskSize,
                        true);
-    char capabilities[80];
-    std::snprintf(capabilities,
-                  sizeof(capabilities),
-                  tr(Txt::TerminalCapabilities),
-                  static_cast<unsigned>(terminal_settings.terminal_number),
-                  static_cast<unsigned>(terminal_settings.data_mask_size),
-                  static_cast<unsigned>(terminal_settings.data_mask_size));
-    draw_value_row(LEFT_INFO_WIDTH + 28, 482, 760, tr(Txt::MenuTerminal), capabilities);
+    draw_screen_button(targets, LEFT_INFO_WIDTH + 28, 482, 760, 52,
+                       terminal_settings.show_diagnostics ? tr(Txt::DiagnosticsOn) : tr(Txt::DiagnosticsOff),
+                       vt_scene_renderer::TerminalAction::ToggleDiagnostics, terminal_settings.show_diagnostics);
     lcd_panel::draw_text(LEFT_INFO_WIDTH + 42, 544, 2, tr(Txt::RestartRequired), 0x52AA);
 }
+
+#if ISOVT_ENABLE_AGISOSTACK
+// Called only by the scene renderer while scene_mutex is held. Use counter
+// differences rather than lifetime averages, including unsigned wraparound.
+std::int64_t diagnostics_sample_us = 0;
+std::uint32_t diagnostics_idle[2] = {};
+int diagnostics_cpu[2] = { -1, -1 };
+
+void draw_diagnostics_overlay()
+{
+    if (!terminal_settings.show_diagnostics)
+    {
+        diagnostics_sample_us = 0;
+        diagnostics_cpu[0] = diagnostics_cpu[1] = -1;
+        return;
+    }
+    const auto now = esp_timer_get_time();
+#if CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS && CONFIG_FREERTOS_RUN_TIME_STATS_USING_ESP_TIMER
+    if ((diagnostics_sample_us == 0) || ((now - diagnostics_sample_us) >= 1000000))
+    {
+        for (int core = 0; core < 2; ++core)
+        {
+            const auto idle = static_cast<std::uint32_t>(ulTaskGetIdleRunTimeCounterForCore(core));
+            if (diagnostics_sample_us != 0)
+            {
+                const auto delta = static_cast<std::uint32_t>(idle - diagnostics_idle[core]);
+                diagnostics_cpu[core] = std::clamp(100 - static_cast<int>(
+                    100ULL * delta / static_cast<std::uint64_t>(now - diagnostics_sample_us)), 0, 100);
+            }
+            diagnostics_idle[core] = idle;
+        }
+        diagnostics_sample_us = now;
+    }
+#else
+    (void)now;
+#endif
+    // Fills the free strip left of the machine selector, in LCD coordinates.
+    constexpr int x = 4;
+    const int width = current_layout().screen_x - 2 * x;
+    lcd_panel::fill_rect(x, 12, width, 176, CHROME_DARK);
+    char text[24];
+    lcd_panel::draw_text(x + 2, 18, 1, tr(Txt::DiagnosticsTitle), CHROME_BORDER);
+    for (int core = 0; core < 2; ++core)
+    {
+        if (diagnostics_cpu[core] < 0)
+            std::snprintf(text, sizeof(text), "CPU%d  --", core);
+        else
+            std::snprintf(text, sizeof(text), "CPU%d %3d%%", core, diagnostics_cpu[core]);
+        lcd_panel::draw_text(x + 2, 40 + core * 18, 1, text, CHROME_TEXT);
+    }
+    std::snprintf(text, sizeof(text), "CAN %4.1f%%", isobus::CANNetworkManager::CANNetwork.get_estimated_busload(0));
+    lcd_panel::draw_text(x + 2, 80, 1, text, CHROME_TEXT);
+    std::snprintf(text, sizeof(text), "RAM %uK", static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) / 1024));
+    lcd_panel::draw_text(x + 2, 100, 1, text, CHROME_TEXT);
+    std::snprintf(text, sizeof(text), "PSR %uK", static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024));
+    lcd_panel::draw_text(x + 2, 118, 1, text, CHROME_TEXT);
+    twai_status_info_t can = {};
+    if (twai_get_status_info(&can) == ESP_OK)
+    {
+        std::snprintf(text, sizeof(text), "RXQ %u", static_cast<unsigned>(can.msgs_to_rx));
+        lcd_panel::draw_text(x + 2, 138, 1, text, CHROME_TEXT);
+        std::snprintf(text, sizeof(text), "TXQ %u", static_cast<unsigned>(can.msgs_to_tx));
+        lcd_panel::draw_text(x + 2, 156, 1, text, CHROME_TEXT);
+        std::snprintf(text, sizeof(text), "ERR %u/%u", static_cast<unsigned>(can.tx_error_counter), static_cast<unsigned>(can.rx_error_counter));
+        lcd_panel::draw_text(x + 2, 174, 1, text, CHROME_BORDER);
+    }
+}
+#endif
 
 void render_isobus_page(std::vector<ScreenRect> &targets)
 {
@@ -2256,7 +2327,7 @@ void render_aux_page(std::vector<ScreenRect> &targets,
                               (catalog.selected_function_object_id == function.object_id);
         draw_aux_button(targets, LEFT_INFO_WIDTH + 28, y, 360, 58, line,
                         vt_scene_renderer::HitKind::AuxFunction, function.protocol,
-                        function.implement_name, function.object_id, selected, true,
+                        function.implement_name, function.object_id, selected, true, false,
                         designator.value.empty() ? lcd_panel::TextEncoding::UTF8 : designator.encoding);
         draw_aux_designator(working_sets, function.implement_name, function.object_id,
                             LEFT_INFO_WIDTH + 36, y + 6, 46);
@@ -2290,7 +2361,19 @@ void render_aux_page(std::vector<ScreenRect> &targets,
         const auto status = std::find_if(catalog.input_statuses.begin(), catalog.input_statuses.end(), [&](const aux_n::InputStatus &entry) {
             return (entry.device_name == input.device_name) && (entry.input_object_id == input.object_id);
         });
-        if (status != catalog.input_statuses.end())
+        // Status messages only exist for Type 2 inputs, and retained values mean
+        // nothing once the input has gone offline.
+        const bool show_status = (status != catalog.input_statuses.end()) && input.online &&
+                                 (input.protocol == aux_n::Protocol::Type2);
+        const auto input_type = static_cast<aux_n::FunctionType>(input.function_type);
+        const bool boolean_input = (input_type == aux_n::FunctionType::BooleanLatching) ||
+                                   (input_type == aux_n::FunctionType::BooleanMomentary) ||
+                                   (input_type == aux_n::FunctionType::DualBooleanLatching) ||
+                                   (input_type == aux_n::FunctionType::DualBooleanMomentary) ||
+                                   (input_type == aux_n::FunctionType::DualBooleanLatchingUpOnly) ||
+                                   (input_type == aux_n::FunctionType::DualBooleanLatchingDownOnly);
+        const bool active = show_status && boolean_input && ((status->value_1 == 1U) || (status->value_1 == 2U));
+        if (show_status)
         {
             std::snprintf(line, sizeof(line), "%.12s  %u/%u",
                           input_label,
@@ -2302,7 +2385,7 @@ void render_aux_page(std::vector<ScreenRect> &targets,
         }
         draw_aux_button(targets, LEFT_INFO_WIDTH + 420, y, 368, 58, line,
                         vt_scene_renderer::HitKind::AuxInput, input.protocol,
-                        input.device_name, input.object_id, false, compatible,
+                        input.device_name, input.object_id, false, compatible, active,
                         designator.value.empty() ? lcd_panel::TextEncoding::UTF8 : designator.encoding);
         draw_aux_designator(working_sets, input.device_name, input.object_id,
                             LEFT_INFO_WIDTH + 428, y + 6, 46);
@@ -2844,6 +2927,8 @@ bool render(const std::shared_ptr<isobus::VirtualTerminalServerManagedWorkingSet
     lcd_panel::draw_text(menu_x + 26, menu_y + 149, 2, "U", CHROME_TEXT);
     add_screen_target(next_targets, menu_x, menu_y, menu_width, menu_height, TerminalAction::ToggleMenu);
 
+    draw_diagnostics_overlay();
+
     lcd_panel::use_ui_area();
     render_input_editor(next_targets, &context);
 
@@ -2893,6 +2978,11 @@ void apply_terminal_action(TerminalAction action)
             terminal_menu_open.store(!terminal_menu_open.load(std::memory_order_relaxed),
                                      std::memory_order_relaxed);
             terminal_notice = nullptr;
+            break;
+        case TerminalAction::ToggleDiagnostics:
+            terminal_settings.show_diagnostics = !terminal_settings.show_diagnostics;
+            diagnostics_sample_us = 0;
+            diagnostics_cpu[0] = diagnostics_cpu[1] = -1;
             break;
         case TerminalAction::ShowMachines:
         case TerminalAction::ShowTerminal:

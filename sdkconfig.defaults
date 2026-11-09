@@ -17,3 +17,5 @@ CONFIG_ISOVT_IDENTITY_NUMBER=1
 # The AgIsoStack++ TWAI plugin and can_monitor use the legacy TWAI driver, which
 # ESP-IDF 6.x still ships but marks deprecated.
 CONFIG_TWAI_SUPPRESS_DEPRECATE_WARN=y
+CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS=y
+CONFIG_FREERTOS_RUN_TIME_STATS_USING_ESP_TIMER=y
