@@ -125,6 +125,7 @@ so this keeps platform dependencies to what is needed.
 | `Waveshare7B` | ESP32-S3 | `sdkconfig.defaults.Waveshare7B.esp32s3` |
 | `Waveshare7B_RS232` | ESP32-S3 | + `sdkconfig.defaults.rs232` |
 | `Waveshare7B_NTRIP` | ESP32-S3 | + `sdkconfig.defaults.ntrip` |
+| `Waveshare5` | ESP32-S3 | `sdkconfig.defaults.Waveshare5.esp32s3` (1024x600) |
 | `JC8012P4` | ESP32-P4 | `sdkconfig.defaults.JC8012P4.esp32p4` |
 
 The configuration is layered: `sdkconfig.defaults` (shared),

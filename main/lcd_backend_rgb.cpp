@@ -19,6 +19,11 @@ namespace
 {
 constexpr char TAG[] = "lcd";
 constexpr std::size_t FRAME_PIXELS = static_cast<std::size_t>(board::LCD_WIDTH) * board::LCD_HEIGHT;
+#if CONFIG_ISOVT_BOARD_WAVESHARE_ESP32S3_TOUCH_LCD_5
+constexpr int PCLK_MHZ = 21;
+#else
+constexpr int PCLK_MHZ = 30;
+#endif
 
 esp_lcd_panel_handle_t panel = nullptr;
 std::array<std::uint16_t *, 2> frame_buffers = {};
@@ -58,15 +63,24 @@ esp_err_t init()
 
     esp_lcd_rgb_panel_config_t config = {};
     config.clk_src = LCD_CLK_SRC_DEFAULT;
-    config.timings.pclk_hz = 30 * 1000 * 1000;
+    config.timings.pclk_hz = PCLK_MHZ * 1000 * 1000;
     config.timings.h_res = board::LCD_WIDTH;
     config.timings.v_res = board::LCD_HEIGHT;
+#if CONFIG_ISOVT_BOARD_WAVESHARE_ESP32S3_TOUCH_LCD_5
+    config.timings.hsync_pulse_width = 30;
+    config.timings.hsync_back_porch = 145;
+    config.timings.hsync_front_porch = 170;
+    config.timings.vsync_pulse_width = 2;
+    config.timings.vsync_back_porch = 23;
+    config.timings.vsync_front_porch = 12;
+#else
     config.timings.hsync_pulse_width = 162;
     config.timings.hsync_back_porch = 152;
     config.timings.hsync_front_porch = 48;
     config.timings.vsync_pulse_width = 45;
     config.timings.vsync_back_porch = 13;
     config.timings.vsync_front_porch = 3;
+#endif
     config.timings.flags.pclk_active_neg = true;
     config.data_width = 16;
     config.in_color_format = LCD_COLOR_FMT_RGB565;
@@ -119,8 +133,8 @@ esp_err_t init()
     ESP_RETURN_ON_ERROR(esp_lcd_rgb_panel_register_event_callbacks(panel, &callbacks, nullptr), TAG,
                         "RGB frame callback registration failed");
 
-    ESP_LOGI(TAG, "RGB LCD ready: %dx%d, 30 MHz, double RGB565 framebuffer with bounce DMA",
-             board::LCD_WIDTH, board::LCD_HEIGHT);
+    ESP_LOGI(TAG, "RGB LCD ready: %dx%d, %d MHz, double RGB565 framebuffer with bounce DMA",
+             board::LCD_WIDTH, board::LCD_HEIGHT, PCLK_MHZ);
     return ESP_OK;
 }
 

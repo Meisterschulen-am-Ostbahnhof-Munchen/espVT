@@ -21,6 +21,7 @@
 #   Waveshare7B        esp32s3  Waveshare ESP32-S3-Touch-LCD-7B, no GNSS
 #   Waveshare7B_RS232  esp32s3  + NMEA over RS-232 (release target)
 #   Waveshare7B_NTRIP  esp32s3  + UM982 RTK with NTRIP over Wi-Fi
+#   Waveshare5         esp32s3  Waveshare ESP32-S3-Touch-LCD-5 (1024x600), no GNSS
 #   JC8012P4           esp32p4  Guition JC8012P4A1C_I_W_Y 10.1", no GNSS
 #
 #   Aliases: default -> Waveshare7B, rs232 -> Waveshare7B_RS232,
@@ -43,7 +44,7 @@
 
 IDF_ACTIVATE="${IDF_ACTIVATE:-$HOME/.espressif/tools/activate_idf_v6.1.sh}"
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ALL_TARGETS="Waveshare7B Waveshare7B_RS232 Waveshare7B_NTRIP JC8012P4"
+ALL_TARGETS="Waveshare7B Waveshare7B_RS232 Waveshare7B_NTRIP Waveshare5 JC8012P4"
 
 COMMAND="${1:-all}"
 ARG2="$2"
@@ -70,6 +71,10 @@ select_target() {
         Waveshare7B_NTRIP)
             CHIP="esp32s3"
             SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.esp32s3;sdkconfig.defaults.Waveshare7B.esp32s3;sdkconfig.defaults.ntrip"
+            ;;
+        Waveshare5)
+            CHIP="esp32s3"
+            SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.esp32s3;sdkconfig.defaults.Waveshare5.esp32s3"
             ;;
         JC8012P4)
             CHIP="esp32p4"

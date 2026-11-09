@@ -40,8 +40,12 @@ if(CONFIG_ISOVT_BOARD_GUITION_JC8012P4A1C)
         "touch_gsl3680.cpp"
     )
 else()
+    if(CONFIG_ISOVT_BOARD_WAVESHARE_ESP32S3_TOUCH_LCD_5)
+        list(APPEND ISOVT_SOURCES "board_support_waveshare5.cpp")
+    else()
+        list(APPEND ISOVT_SOURCES "board_support_waveshare7b.cpp")
+    endif()
     list(APPEND ISOVT_SOURCES
-        "board_support_waveshare7b.cpp"
         "lcd_backend_rgb.cpp"
         "touch_gt911.cpp"
     )

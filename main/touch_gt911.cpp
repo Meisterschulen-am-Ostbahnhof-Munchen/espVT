@@ -20,6 +20,7 @@ constexpr char TAG[] = "gt911";
 constexpr std::uint8_t PRIMARY_ADDRESS = 0x5D;
 constexpr std::uint8_t BACKUP_ADDRESS = 0x14;
 constexpr std::uint16_t PRODUCT_ID_REGISTER = 0x8140;
+constexpr std::uint16_t RESOLUTION_REGISTER = 0x8146;
 constexpr std::uint16_t TOUCH_STATUS_REGISTER = 0x814E;
 constexpr std::size_t MAX_TOUCH_POINTS = 5;
 
@@ -108,6 +109,15 @@ esp_err_t initialize_controller()
         {
             address = candidate_address;
             ESP_LOGI(TAG, "GT911 ready at 0x%02x, product=%c%c%c", address, product_id[0], product_id[1], product_id[2]);
+            std::array<std::uint8_t, 4> resolution = {};
+            if (read_register(RESOLUTION_REGISTER, resolution.data(), resolution.size()) == ESP_OK)
+            {
+                ESP_LOGI(TAG, "GT911 touch resolution %ux%u, LCD configured as %dx%d",
+                         static_cast<unsigned>(resolution[0] | (resolution[1] << 8)),
+                         static_cast<unsigned>(resolution[2] | (resolution[3] << 8)),
+                         board::LCD_WIDTH,
+                         board::LCD_HEIGHT);
+            }
             return ESP_OK;
         }
 
