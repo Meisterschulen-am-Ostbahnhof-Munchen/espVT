@@ -136,11 +136,10 @@ VTLayout current_layout()
     const int soft_key_height = data_mask_size / SOFT_KEY_ROWS;
     const int soft_key_width = soft_key_height;
     const int fixed_width = working_set_gap + data_mask_size + SOFT_KEY_COLUMNS * soft_key_width;
-    // 136 px on the 600 px high LCD; narrowed where the LCD is too short for it
-    // to fit next to the MENU strip.
-    int working_set_bar_width = (136 * board::LCD_HEIGHT / 600) * scale_denominator / scale_numerator;
+    // The selector has the size of a soft key; narrowed where the LCD is too
+    // short for it to fit next to the MENU strip.
     const int maximum_content_width = (board::LCD_WIDTH - MENU_STRIP_WIDTH) * scale_denominator / scale_numerator;
-    working_set_bar_width = std::min(working_set_bar_width, maximum_content_width - fixed_width);
+    const int working_set_bar_width = std::min(soft_key_width, maximum_content_width - fixed_width);
     const int working_set_slot_height = working_set_bar_width;
     const int data_mask_x = VT_ORIGIN_X + working_set_bar_width + working_set_gap;
     const int soft_key_x = data_mask_x + data_mask_size;
@@ -1637,8 +1636,8 @@ void render_working_set_bar(
                           sizeof(address),
                           "SA %u",
                           static_cast<unsigned>(working_set->get_control_function()->get_address()));
-            lcd_panel::draw_text(VT_ORIGIN_X + 18, y + 34, 2, address, CHROME_TEXT);
-            lcd_panel::draw_text(VT_ORIGIN_X + 15, y + 58, 1, tr(Txt::WorkingSetNoPool), CHROME_BORDER);
+            lcd_panel::draw_text(VT_ORIGIN_X + 4, y + 34, 2, address, CHROME_TEXT);
+            lcd_panel::draw_text(VT_ORIGIN_X + 4, y + 58, 1, tr(Txt::WorkingSetNoPool), CHROME_BORDER);
         }
 
         if (working_set_object)
