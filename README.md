@@ -182,6 +182,8 @@ Panel odswieza sie raz na sekunde: CPU0/CPU1 to biezace obciazenie rdzeni,
 CAN to szacowane obciazenie magistrali, RAM/PSR to wolna pamiec w KiB,
 RXQ/TXQ to kolejki CAN, a ERR to aktualne liczniki bledow nadawania/odbioru.
 Pierwszy pomiar CPU pojawia sie po zebraniu pelnego przedzialu pomiarowego.
+Jesli CPU pokazuje stale `--`, istniejacy `build_<cel>/sdkconfig` ma wylaczone
+statystyki czasu pracy: przebuduj cel poleceniem `./make_espVT.sh <cel> force`.
 
 ## Warianty GNSS
 

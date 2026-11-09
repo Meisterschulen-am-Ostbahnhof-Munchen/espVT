@@ -45,6 +45,7 @@ constexpr std::uint64_t NULL_DEVICE_NAME = UINT64_MAX;
 // screen repaints. Keep enough margin to ride through short bus stalls.
 constexpr std::int64_t AUXILIARY_INPUT_TIMEOUT_US = 3000000;
 constexpr std::int64_t AUXILIARY_LEARN_TIMEOUT_US = 30000000;
+constexpr std::size_t MAX_INPUT_STATUSES = 64;
 constexpr char AUX_NVS_NAMESPACE[] = "isovt_aux";
 constexpr char AUX_NVS_ASSIGNMENTS[] = "assign";
 
@@ -868,6 +869,15 @@ private:
                                        (status->state != state);
                 if (status == catalog.input_statuses.end())
                 {
+                    // Any bus node can send these, so the list must stay bounded.
+                    if (catalog.input_statuses.size() >= MAX_INPUT_STATUSES)
+                    {
+                        catalog.input_statuses.erase(std::min_element(
+                            catalog.input_statuses.begin(), catalog.input_statuses.end(),
+                            [](const aux_n::InputStatus &left, const aux_n::InputStatus &right) {
+                                return left.last_seen_us < right.last_seen_us;
+                            }));
+                    }
                     catalog.input_statuses.push_back({ source_name, input_object_id, value_1, value_2, state, esp_timer_get_time() });
                 }
                 else
@@ -894,12 +904,6 @@ private:
             if (input_status_changed)
             {
                 isovt::request_aux_n_status_render();
-                ESP_LOGI(TAG, "AUX-N input NAME=0x%016llx id=%u value1=%u value2=%u state=0x%02x",
-                         static_cast<unsigned long long>(source_name),
-                         static_cast<unsigned>(input_object_id),
-                         static_cast<unsigned>(value_1),
-                         static_cast<unsigned>(value_2),
-                         static_cast<unsigned>(state));
             }
             ESP_LOGD(TAG, "AUX-N input NAME=0x%016llx id=%u value1=%u state=0x%02x",
                      static_cast<unsigned long long>(source_name),

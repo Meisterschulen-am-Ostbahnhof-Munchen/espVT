@@ -2169,7 +2169,7 @@ void draw_diagnostics_overlay()
 #endif
     // Fills the free strip left of the machine selector, in LCD coordinates.
     constexpr int x = 4;
-    const int width = std::max(75, current_layout().screen_x - 2 * x);
+    const int width = current_layout().screen_x - 2 * x;
     lcd_panel::fill_rect(x, 12, width, 176, CHROME_DARK);
     char text[24];
     lcd_panel::draw_text(x + 2, 18, 1, tr(Txt::DiagnosticsTitle), CHROME_BORDER);
@@ -2361,9 +2361,19 @@ void render_aux_page(std::vector<ScreenRect> &targets,
         const auto status = std::find_if(catalog.input_statuses.begin(), catalog.input_statuses.end(), [&](const aux_n::InputStatus &entry) {
             return (entry.device_name == input.device_name) && (entry.input_object_id == input.object_id);
         });
-        const bool active = (status != catalog.input_statuses.end()) && input.online &&
-                            ((status->value_1 == 1U) || (status->value_1 == 2U));
-        if (status != catalog.input_statuses.end())
+        // Status messages only exist for Type 2 inputs, and retained values mean
+        // nothing once the input has gone offline.
+        const bool show_status = (status != catalog.input_statuses.end()) && input.online &&
+                                 (input.protocol == aux_n::Protocol::Type2);
+        const auto input_type = static_cast<aux_n::FunctionType>(input.function_type);
+        const bool boolean_input = (input_type == aux_n::FunctionType::BooleanLatching) ||
+                                   (input_type == aux_n::FunctionType::BooleanMomentary) ||
+                                   (input_type == aux_n::FunctionType::DualBooleanLatching) ||
+                                   (input_type == aux_n::FunctionType::DualBooleanMomentary) ||
+                                   (input_type == aux_n::FunctionType::DualBooleanLatchingUpOnly) ||
+                                   (input_type == aux_n::FunctionType::DualBooleanLatchingDownOnly);
+        const bool active = show_status && boolean_input && ((status->value_1 == 1U) || (status->value_1 == 2U));
+        if (show_status)
         {
             std::snprintf(line, sizeof(line), "%.12s  %u/%u",
                           input_label,
