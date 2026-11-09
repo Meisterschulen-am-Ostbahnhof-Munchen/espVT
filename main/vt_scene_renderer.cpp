@@ -2312,7 +2312,7 @@ void render_aux_page(std::vector<ScreenRect> &targets,
     constexpr int bottom_y = 474;
     constexpr int button_width = 184;
     draw_screen_button(targets, LEFT_INFO_WIDTH + 28, bottom_y, button_width, 70,
-                       terminal_settings.aux_o_legacy ? "AUX-O VT2" : "AUX-N VT6",
+                       terminal_settings.aux_o_legacy ? "AUX-O VT2" : "AUX-N VT4",
                        vt_scene_renderer::TerminalAction::ToggleAuxOLegacy,
                        terminal_settings.aux_o_legacy);
     draw_screen_button(targets, LEFT_INFO_WIDTH + 220, bottom_y, button_width, 70,
@@ -2394,7 +2394,7 @@ void render_information_page()
     const esp_app_desc_t *app = esp_app_get_description();
     draw_value_row(LEFT_INFO_WIDTH + 28, 112, 760, tr(Txt::InfoSoftware), app ? app->project_name : "ESP ISOBUS VT", true);
     draw_value_row(LEFT_INFO_WIDTH + 28, 160, 760, tr(Txt::InfoVtVersion),
-                   terminal_settings.aux_o_legacy ? "ISO 11783-6 VT 2" : "ISO 11783-6 VT 6");
+                   terminal_settings.aux_o_legacy ? "ISO 11783-6 VT 2" : "ISO 11783-6 VT 4");
     char screen[48];
     std::snprintf(screen, sizeof(screen), tr(Txt::InfoScreenValue), board::LCD_WIDTH, board::LCD_HEIGHT);
     draw_value_row(LEFT_INFO_WIDTH + 28, 208, 760, tr(Txt::InfoScreen), screen);
