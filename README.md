@@ -39,6 +39,17 @@ Plytka ESP32-S3-Touch-LCD-7B ma:
 Uwaga: port USB i CAN wspoldziela linie GPIO19/20. Do programowania uzywaj portu
 UART/USB plytki albo przelacz EXIO5 w tryb USB zgodnie z dokumentacja Waveshare.
 
+### Waveshare ESP32-S3-Touch-LCD-5 (1024x600)
+
+- LCD RGB 5 cali, 1024x600 (cel `Waveshare5`; panel 800x480 z tej rodziny plytek nie jest obslugiwany),
+- dotyk GT911 po I2C (SDA GPIO8, SCL GPIO9, IRQ GPIO4),
+- CAN/TWAI na wlasnych pinach: TX GPIO15, RX GPIO16,
+- ekspander I/O CH422G: EXIO1 reset dotyku, EXIO2 podswietlenie, EXIO3 reset LCD.
+
+Na tej plytce CAN nie wspoldzieli pinow z USB, wiec natywny port USB pozostaje
+dostepny do programowania i logow. Log startowy pokazuje rozdzielczosc zapisana
+w GT911, po ktorej mozna rozpoznac zamontowany panel.
+
 ### Guition JC8012P4A1C_I_W_Y (ESP32-P4, eksperymentalnie)
 
 - LCD MIPI-DSI 10,1 cala, panel 800x1280 (JD9365, "new panel", SKU 10153001-V3),

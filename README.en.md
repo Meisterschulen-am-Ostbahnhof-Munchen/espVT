@@ -40,6 +40,17 @@ Note: the USB port and CAN share the GPIO19/20 lines. Use the board's UART/USB
 port for programming, or switch EXIO5 to USB mode as described in the Waveshare
 documentation.
 
+### Waveshare ESP32-S3-Touch-LCD-5 (1024x600)
+
+- 5-inch RGB LCD, 1024x600 (target `Waveshare5`; the 800x480 panel sold in this board family is not supported),
+- GT911 touch over I2C (SDA GPIO8, SCL GPIO9, IRQ GPIO4),
+- CAN/TWAI on its own pins: TX GPIO15, RX GPIO16,
+- CH422G I/O expander: EXIO1 touch reset, EXIO2 backlight, EXIO3 LCD reset.
+
+CAN does not share pins with USB on this board, so the native USB port stays
+available for flashing and logs. The boot log prints the resolution stored in
+the GT911, which shows which panel is fitted.
+
 ### Guition JC8012P4A1C_I_W_Y (ESP32-P4, experimental)
 
 - 10.1" MIPI-DSI LCD, 800x1280 panel (JD9365, "new panel", SKU 10153001-V3),

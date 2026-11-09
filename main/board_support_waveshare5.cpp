@@ -82,6 +82,14 @@ esp_err_t init_io_expander()
         return ESP_OK;
     }
 
+    // Hold the CAN transceiver recessive until TWAI takes over the pins. This
+    // runs once at startup, so bus-off recovery cannot reconfigure a live pin.
+    ESP_RETURN_ON_ERROR(gpio_reset_pin(CAN_TX), TAG, "CAN TX reset failed");
+    ESP_RETURN_ON_ERROR(gpio_set_direction(CAN_TX, GPIO_MODE_OUTPUT), TAG, "CAN TX direction failed");
+    ESP_RETURN_ON_ERROR(gpio_set_level(CAN_TX, 1), TAG, "CAN TX recessive level failed");
+    ESP_RETURN_ON_ERROR(gpio_reset_pin(CAN_RX), TAG, "CAN RX reset failed");
+    ESP_RETURN_ON_ERROR(gpio_set_direction(CAN_RX, GPIO_MODE_INPUT), TAG, "CAN RX direction failed");
+
     ESP_RETURN_ON_ERROR(add_device(CH422G_ADDR_MODE, mode_device), TAG, "CH422G mode attach failed");
     ESP_RETURN_ON_ERROR(add_device(CH422G_ADDR_IO_OUT, output_device), TAG, "CH422G output attach failed");
     ESP_RETURN_ON_ERROR(i2c_master_transmit(mode_device, &CH422G_MODE_IO_OUTPUT, 1, 100), TAG, "CH422G mode write failed");

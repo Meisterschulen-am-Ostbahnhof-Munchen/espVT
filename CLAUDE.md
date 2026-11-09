@@ -87,5 +87,6 @@ Most AgIsoStack-dependent code is wrapped in `#if ISOVT_ENABLE_AGISOSTACK` (Kcon
 
 - Set `ISOVT_MANUFACTURER_CODE` and `ISOVT_IDENTITY_NUMBER` in menuconfig before connecting to a real bus. The defaults are placeholders.
 - Waveshare 7B: USB and CAN share GPIO19/20. Flash through the board's UART/USB port or switch EXIO5.
+- Waveshare 5: CAN has its own pins (TX GPIO15, RX GPIO16), so native USB stays available.
 - JC8012: no CAN transceiver on the board; the default external transceiver pins are TX GPIO4 / RX GPIO5 on FPC3 (pins 8/7). Use a transceiver with 5 V VCC and 3.3 V VIO (TCAN1044AV-Q1, TJA1051T/3, TJA1462) whose bus pins survive a short to 12/24 V; never suggest the SN65HVD230. Serial port on the development machine: `/dev/ttyACM5` (ttyACM0–4 are other devices).
 - The CAN bus runs at 250 kbit/s.
