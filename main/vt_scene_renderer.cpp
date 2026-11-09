@@ -1636,8 +1636,8 @@ void render_working_set_bar(
                           sizeof(address),
                           "SA %u",
                           static_cast<unsigned>(working_set->get_control_function()->get_address()));
-            lcd_panel::draw_text(VT_ORIGIN_X + 4, y + 34, 2, address, CHROME_TEXT);
-            lcd_panel::draw_text(VT_ORIGIN_X + 4, y + 58, 1, tr(Txt::WorkingSetNoPool), CHROME_BORDER);
+            lcd_panel::draw_text(VT_ORIGIN_X + CONTROL_PADDING, y + 34, 2, address, CHROME_TEXT);
+            lcd_panel::draw_text(VT_ORIGIN_X + CONTROL_PADDING, y + 58, 1, tr(Txt::WorkingSetNoPool), CHROME_BORDER);
         }
 
         if (working_set_object)
