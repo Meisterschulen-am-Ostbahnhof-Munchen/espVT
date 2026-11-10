@@ -2,6 +2,9 @@ CONFIG_ISOVT_BOARD_WAVESHARE_ESP32S3_TOUCH_LCD_5=y
 # CAN has its own pins on this board, so native USB stays free for logs and flashing.
 CONFIG_USJ_ENABLE_USB_SERIAL_JTAG=y
 CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG=y
-# The 21 MHz panel does not need the 120 MHz flash and PSRAM modes of the 7B target.
+# The flash on this board has no 120 MHz high-performance mode; the 7B's 120 MHz
+# settings hang during MSPI timing tuning at boot.
 CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
 CONFIG_SPIRAM_SPEED_80M=y
+# Object pools are thousands of small allocations; keep them out of internal RAM.
+CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=0
