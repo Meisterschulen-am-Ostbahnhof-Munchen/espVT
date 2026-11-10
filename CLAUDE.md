@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-espVT is an experimental (not ISO 11783 certified) ISOBUS Virtual Terminal server (ISO 11783-6). Boards: the Waveshare ESP32-S3-Touch-LCD-7B (1024x600 RGB LCD, GT911 touch, TWAI CAN) and, experimentally, the Guition JC8012P4A1C_I_W_Y (ESP32-P4, 800x1280 MIPI-DSI JD9365 used as 1280x800 landscape, GSL3680 touch, external CAN transceiver). It is built on ESP-IDF 6.1 with a vendored, locally modified AgIsoStack++. User-facing docs (README.md with an English translation in README.en.md, BRINGUP.md, GNSS_NTRIP.md, auxn_buttons_esp32/README.md) are written in Polish. Code and comments are in English.
+espVT is an experimental (not ISO 11783 certified) ISOBUS Virtual Terminal server (ISO 11783-6). Boards: the Waveshare ESP32-S3-Touch-LCD-7B (1024x600 RGB LCD, GT911 touch, TWAI CAN), the Waveshare ESP32-S3-Touch-LCD-5 in its 1024x600 version (GT911, CH422G IO expander, CAN on GPIO15/16) and, experimentally, the Guition JC8012P4A1C_I_W_Y (ESP32-P4, 800x1280 MIPI-DSI JD9365 used as 1280x800 landscape, GSL3680 touch, external CAN transceiver). It is built on ESP-IDF 6.1 with a vendored, locally modified AgIsoStack++. User-facing docs (README.md with an English translation in README.en.md, BRINGUP.md, GNSS_NTRIP.md, auxn_buttons_esp32/README.md) are written in Polish. Code and comments are in English.
 
 The project is GPL-3.0-or-later (earlier MIT notice kept in `LICENSES/MIT-espVT.txt`); the switch came with the GPL-2.0-or-later Silead code in `components/esp_lcd_touch_gsl3680`.
 
@@ -23,7 +23,7 @@ The repo has two firmware projects:
 ./make_espVT.sh menuconfig Waveshare7B_NTRIP   # "ESP ISOBUS VT" menu: Kconfig in main/Kconfig.projbuild
 ```
 
-Targets: `Waveshare7B`, `Waveshare7B_RS232` (release), `Waveshare7B_NTRIP` (esp32s3) and `JC8012P4` (esp32p4); `default`/`rs232`/`ntrip`/`p4` are aliases. Configuration is layered like in logiBUS: `sdkconfig.defaults` (shared) + `sdkconfig.defaults.<chip>` + `sdkconfig.defaults.<Board>.<chip>` + optional `sdkconfig.defaults.rs232`/`.ntrip`. The top-level `CMakeLists.txt` puts each `sdkconfig` into its `build_<target>/` directory and uses `dependencies.lock.<chip>` (committed).
+Targets: `Waveshare7B`, `Waveshare7B_RS232` (release), `Waveshare7B_NTRIP`, `Waveshare5` (esp32s3) and `JC8012P4` (esp32p4); `default`/`rs232`/`ntrip`/`p4` are aliases. Configuration is layered like in logiBUS: `sdkconfig.defaults` (shared) + `sdkconfig.defaults.<chip>` + `sdkconfig.defaults.<Board>.<chip>` + optional `sdkconfig.defaults.rs232`/`.ntrip`. The top-level `CMakeLists.txt` puts each `sdkconfig` into its `build_<target>/` directory and uses `dependencies.lock.<chip>` (committed).
 
 ESP-IDF 6.x specifics: `sdkconfig.defaults.esp32s3` sets the S3 flash HPM choices explicitly; `sdkconfig.defaults` suppresses the deprecation warning for the legacy TWAI driver (`driver/twai.h`), which `can_monitor.cpp` and the AgIsoStack++ `twai_plugin.cpp` still use. `sdkconfig.defaults.esp32p4` lowers the bootloader log level so the P4 bootloader fits below the partition table at 0x8000.
 
@@ -86,6 +86,7 @@ Most AgIsoStack-dependent code is wrapped in `#if ISOVT_ENABLE_AGISOSTACK` (Kcon
 ## Hardware cautions from docs
 
 - Set `ISOVT_MANUFACTURER_CODE` and `ISOVT_IDENTITY_NUMBER` in menuconfig before connecting to a real bus. The defaults are placeholders.
-- Waveshare: USB and CAN share GPIO19/20. Flash through the board's UART/USB port or switch EXIO5.
+- Waveshare 7B: USB and CAN share GPIO19/20. Flash through the board's UART/USB port or switch EXIO5.
+- Waveshare 5: CAN has its own pins (TX GPIO15, RX GPIO16), so native USB stays available.
 - JC8012: no CAN transceiver on the board; the default external transceiver pins are TX GPIO4 / RX GPIO5 on FPC3 (pins 8/7). Use a transceiver with 5 V VCC and 3.3 V VIO (TCAN1044AV-Q1, TJA1051T/3, TJA1462) whose bus pins survive a short to 12/24 V; never suggest the SN65HVD230. Serial port on the development machine: `/dev/ttyACM5` (ttyACM0–4 are other devices).
 - The CAN bus runs at 250 kbit/s.

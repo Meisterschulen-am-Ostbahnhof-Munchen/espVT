@@ -18,6 +18,17 @@ constexpr gpio_num_t TOUCH_IRQ = GPIO_NUM_21;
 constexpr gpio_num_t TOUCH_RESET = GPIO_NUM_22;
 constexpr gpio_num_t LCD_BACKLIGHT = GPIO_NUM_23;
 constexpr gpio_num_t LCD_RESET = GPIO_NUM_27;
+#elif CONFIG_ISOVT_BOARD_WAVESHARE_ESP32S3_TOUCH_LCD_5
+constexpr int LCD_WIDTH = 1024;
+constexpr int LCD_HEIGHT = 600;
+
+constexpr gpio_num_t I2C_SDA = GPIO_NUM_8;
+constexpr gpio_num_t I2C_SCL = GPIO_NUM_9;
+constexpr gpio_num_t TOUCH_IRQ = GPIO_NUM_4;
+
+constexpr int EXIO_TOUCH_RESET = 1;
+constexpr int EXIO_LCD_BACKLIGHT = 2;
+constexpr int EXIO_LCD_RESET = 3;
 #else
 constexpr int LCD_WIDTH = 1024;
 constexpr int LCD_HEIGHT = 600;
