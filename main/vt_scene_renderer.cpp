@@ -87,6 +87,16 @@ std::vector<ScreenRect> hit_targets;
 bool scene_visible = false;
 std::atomic_bool terminal_menu_open{ false };
 vt_scene_renderer::TerminalSettings terminal_settings;
+// Copy for readers on the CAN path: scene_mutex is held for a whole frame, and
+// the VT server reads these settings for nearly every reply.
+std::mutex published_settings_mutex;
+vt_scene_renderer::TerminalSettings published_settings;
+
+void publish_terminal_settings()
+{
+    std::lock_guard<std::mutex> lock(published_settings_mutex);
+    published_settings = terminal_settings;
+}
 vt_scene_renderer::TerminalAction terminal_page = vt_scene_renderer::TerminalAction::ShowMachines;
 ui_text::Text terminal_notice;
 std::size_t aux_function_page = 0;
@@ -2971,6 +2981,7 @@ void apply_terminal_action(TerminalAction action)
         default:
             break;
     }
+    publish_terminal_settings();
 }
 
 void close_menu()
@@ -2985,24 +2996,26 @@ void set_terminal_settings(const TerminalSettings &settings)
     std::lock_guard<std::mutex> lock(scene_mutex);
     terminal_settings = settings;
     apply_ui_language(settings.language);
+    publish_terminal_settings();
 }
 
 TerminalSettings get_terminal_settings()
 {
-    std::lock_guard<std::mutex> lock(scene_mutex);
-    return terminal_settings;
+    std::lock_guard<std::mutex> lock(published_settings_mutex);
+    return published_settings;
 }
 
 void set_metric_units(bool metric)
 {
     std::lock_guard<std::mutex> lock(scene_mutex);
     terminal_settings.metric_units = metric;
+    publish_terminal_settings();
 }
 
 bool get_metric_units()
 {
-    std::lock_guard<std::mutex> lock(scene_mutex);
-    return terminal_settings.metric_units;
+    std::lock_guard<std::mutex> lock(published_settings_mutex);
+    return published_settings.metric_units;
 }
 
 void set_notice(ui_text::Id text)
