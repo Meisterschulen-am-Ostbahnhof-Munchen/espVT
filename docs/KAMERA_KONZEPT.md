@@ -299,6 +299,45 @@ alle 10 s.
 - Optisch am Gerät geprüft: alle drei Layouts richtig, keine Reste alter Inhalte auf den
   Fotos.
 
+### 6.3 Proof of Concept 2b: USB- und WLAN-Kamera gleichzeitig (14.11.2026)
+
+Projekt `1-Demo/compositor_2cam`. Es nutzt den Compositor aus 6.2 mit zwei getrennten
+Quellen und einem gemeinsamen Hardware-Decoder:
+
+- **USB:** Logitech C270, 640x480 MJPEG
+- **WLAN:** Freenove ESP32-S3 mit OV2640, 800x600 MJPEG über HTTP. Das JC8012 verbindet
+  sich über den C6 (ESP-Hosted 2.11.7) mit dem Access Point der Kamera.
+
+Neu sind die Layouts L3 (VT 1:1 + zwei Kameras übereinander) und L4 (zwei Kameras
+nebeneinander).
+
+| Layout | USB 640x480 | WLAN 800x600 | Bildwechsel/s | PPA pro Bildwechsel |
+|---|---|---|---|---|
+| L3 VT + 2 Kameras | 15 fps (Kamera-Grenze) | 25 fps (volle Rate) | 30 | 7,4 + 10,4 ms |
+| L4 2 Kameras | 15 fps | 25 fps | 30 | 7,4 + 10,9 ms |
+| L1 WLAN Vollbild | – | 25 fps | 25 | 17,8 ms |
+
+- Decoder: 3,9 ms (640x480) bzw. 5,8 ms (800x600) pro Bild. Bei 15 + 25 fps ist er zu
+  etwa 20 % belegt.
+- PPA bei zwei Kameras: etwa 55 %. Zwei Kameras passen gut, für eine dritte wird es eng.
+  Dann kleinere Formate anfordern.
+- Beide Kameras werden auch dekodiert, wenn sie gerade nicht sichtbar sind. Das ließe sich
+  einsparen.
+
+Erkenntnisse:
+
+- **WLAN hängt stark von der Umgebung ab.** Während eines starken WLAN-Uploads im selben
+  Raum sank die Funkkamera auf 1–4 fps, bei sehr gutem Signal (RSSI −11 dBm). Sendezeit,
+  nicht Signalstärke, ist der Engpass. Konsequenzen:
+  - Sicherheitsrelevante Bilder (Rückfahrkamera) **per Kabel**.
+  - Bei Funk 5 GHz prüfen (ESP32-C5).
+  - Das Terminal sollte die Bildrate jeder Kamera überwachen und einen Einbruch anzeigen.
+- **Hochlaufzeit WLAN:** Nach dem Verbinden dauert es 20–60 s, bis die volle Bildrate
+  erreicht ist.
+- **Die C270 halbiert ihre Bildrate bei wenig Licht selbst** (30 → 15 fps). Das ist kein
+  Engpass im Terminal.
+- **USB-Host auf Core 0 oder Core 1** macht keinen messbaren Unterschied.
+
 ---
 
 ## 7. Einstellungen pro Kamera
@@ -330,13 +369,48 @@ alle 10 s.
 |---|---|---|
 | 1 | `camera_manager` mit einer USB-UVC-Quelle; L1 Vollbild über MENU; Alarm-Durchbruch | erste Kamera im espVT |
 | 2 | Compositor mit Dirty-Rects (PoC erfolgreich, 6.2); L2 ISOBUS + Kamera; Rückfahr-Automatik über TECU | Kernfunktion |
-| 3 | WLAN-Kameras, Terminal als Access Point; mehrere Quellen; L3/L4/L5 | mehrere Kameras |
+| 3 | WLAN-Kameras, Terminal als Access Point; mehrere Quellen (USB + WLAN im PoC erfolgreich, 6.3); L3/L4/L5 | mehrere Kameras |
 | 4 | Hilfslinien, Spiegeln, Einstellungsmenü; Analog-zu-USB-Wandler testen | Feldtauglichkeit |
 | 5 (optional) | Standbild auf SD-Karte; CSI-Kamera; Waveshare 7B mit kleiner WLAN-Kamera | Extras |
 
 ---
 
-## 10. Offene Fragen
+## 10. Offene Punkte und Risiken
+
+**Noch zu prüfen (Proof of Concept)**
+
+| # | Thema | Frage | Status |
+|---|---|---|---|
+| 2a | Zwei USB-Kameras über einen Hub | Hält der P4-Host mehrere UVC-Streams? Geht ein Full-Speed-Gerät hinter einem High-Speed-Hub (Split-Transaktionen)? Gemischt isochron/Bulk? | offen, Hub wird besorgt |
+| 2b | USB + WLAN gleichzeitig | Decoder und PPA bei zwei Quellen | **erledigt**, siehe 6.3 |
+| 3 | Terminal als Access Point | C6 als SoftAP über ESP-Hosted, mehrere Funkkameras als Station | offen |
+| 4 | Latenz | ms von der Kamera bis zum Display, pro Kameratyp | offen |
+| 5 | Analog-zu-USB in einem Gerät | ohne HDMI-Zwischenstufe | offen, Hardware fehlt |
+
+**Einbau in espVT**
+
+- espVT hat noch keine Dirty-Rects: `present()` dreht heute jedes Mal den ganzen
+  Bildschirm. Renderer und `lcd_panel` müssen geänderte Bereiche melden. Das ist der
+  größte Umbau.
+- `current_layout()` braucht Maßstab und Ursprung pro Layout; Treffertabelle und
+  Touch-Abbildung müssen mitgehen.
+- Touch auf Kamerafenstern (Vollbild, Kamera wechseln).
+- Bedienung im lokalen Menü, Texte in `ui_text.hpp` für alle Sprachen.
+- Speicherbudget im PSRAM: pro Quelle Eingangs- und Decoder-Puffer (2 x 1280x960x2 Byte).
+
+**Fahrzeug und Praxis**
+
+- Stromversorgung: Wie viel Strom liefert der USB-Port des JC8012 (5 V aus `USB5V_IN`)
+  für Kameras und Hub? Im Fahrzeug: 12/24 V auf 5 V, Kaltstart, Einschaltreihenfolge
+  (Analog-Wandler erkennen das Format sonst nicht).
+- Stecker und Kabel: USB ist im Fahrzeug empfindlich. Kameras mit USB-C ohne
+  CC-Widerstände brauchen fest anliegende 5 V.
+- WLAN: Kameras koppeln, Passwörter verwalten, fremde Geräte abweisen. Störungen durch
+  andere Netze (siehe 6.3).
+
+---
+
+## 11. Offene Fragen
 
 1. Welche Kameras sind an den Maschinen tatsächlich verbaut? Analog (welches Format?) oder
    schon digital?
