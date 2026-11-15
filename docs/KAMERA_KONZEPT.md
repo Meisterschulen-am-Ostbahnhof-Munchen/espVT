@@ -57,9 +57,11 @@ Kette ist einfach. Voraussetzungen:
   nötig (gemeldet als [esp-usb#651](https://github.com/espressif/esp-usb/issues/651)).
 - Format und Bildrate wählt die Software aus der Liste, die die Kamera meldet:
   größtes MJPEG ≤ Zielgröße, höchstens 30 fps.
-- Mehrere USB-Kameras über einen USB-2.0-Hub sind **noch nicht getestet**.
-  `usb_host_uvc` kann mehrere Streams. Begrenzend sind die Isochron-Bandbreite und die
-  FIFO-Größe des P4 (vgl. esp-usb#538). Bulk-Kameras sind dafür unkritischer.
+- Mehrere USB-Kameras laufen (siehe 6.4): High-Speed-Kameras über einen USB-2.0-Hub an
+  der Buchse „High speed USB“, dazu eine Full-Speed-Kamera an der Buchse
+  „Full Speed USB“. **Full-Speed-Kameras hinter einem Hub gehen nicht**, weil der
+  USB-Stack keinen Transaction Translator hat. Für das Fahrzeug also High-Speed-Kameras
+  bzw. -Grabber wählen.
 
 **B: Analoge Kameras** sind in der Landtechnik verbreitet (12 V, robust, vorhandene
 Verkabelung). Es gibt sie in mehreren untereinander inkompatiblen Formaten: CVBS
@@ -301,7 +303,7 @@ alle 10 s.
 
 ### 6.3 Proof of Concept 2b: USB- und WLAN-Kamera gleichzeitig (14.11.2026)
 
-Projekt `1-Demo/compositor_2cam`. Es nutzt den Compositor aus 6.2 mit zwei getrennten
+Projekt `two_cameras/` im Repo `JC8012P4A1C_I_W_Y_Compositor_PoC`. Es nutzt den Compositor aus 6.2 mit zwei getrennten
 Quellen und einem gemeinsamen Hardware-Decoder:
 
 - **USB:** Logitech C270, 640x480 MJPEG
@@ -337,6 +339,39 @@ Erkenntnisse:
 - **Die C270 halbiert ihre Bildrate bei wenig Licht selbst** (30 → 15 fps). Das ist kein
   Engpass im Terminal.
 - **USB-Host auf Core 0 oder Core 1** macht keinen messbaren Unterschied.
+
+### 6.4 Proof of Concept 2a: mehrere USB-Kameras (15.11.2026)
+
+Projekt `usb_cameras/` im Repo `JC8012P4A1C_I_W_Y_Compositor_PoC`. Drei Kameras sind
+gleichzeitig angeschlossen und streamen; ein Layout zeigt höchstens zwei.
+
+| Kamera | Anschluss | Übertragung | fps bei 640x480 |
+|---|---|---|---|
+| „ESP32 CAM“-Modul | Buchse „Full Speed USB“ (USB-OTG 1.1) | Bulk, Full Speed | 24–25 (Kamera-Maximum) |
+| Vitade HD960 | Hub an „High speed USB“ | isochron, High Speed | 29–30 |
+| Logitech C270 | Hub an „High speed USB“ | isochron, High Speed | 24–30 (lichtabhängig) |
+
+- Zwei Kameras sichtbar: 38–40 Bildwechsel/s, PPA 7,1–7,7 ms pro Fenster, Decoder
+  3,0–4,0 ms pro Bild. Kein fehlerhaftes Bild in etwa 110 s.
+- **Nur sichtbare Kameras werden dekodiert**, die anderen streamen weiter und ihre
+  Bilder werden verworfen. Ein Kamerawechsel braucht dadurch keinen Stream-Neustart; das
+  erste Bild kommt nach ≤ 40 ms. So sollte es auch in espVT werden.
+
+Erkenntnisse:
+
+- **Kein Transaction Translator** in der USB-Host-Bibliothek (auch `usb` 1.6.1):
+  Full-Speed-Geräte hinter einem High-Speed-Hub werden abgelehnt. Zwei „ESP32 CAM“ an
+  einem Hub gehen deshalb nicht.
+- **Zweite USB-Buchse nutzbar:** Die Buchse „Full Speed USB“ hängt an GPIO24/25 (FS-PHY 0),
+  die ab Werk dem USB-Serial/JTAG gehört. Die Firmware tauscht die PHYs per Register
+  (kein eFuse) und betreibt beide Controller als Host. Der Standard-PHY des
+  USB-1.1-Controllers läge auf GPIO26/27; GPIO27 ist der LCD-Reset.
+- **Isochrone Bandbreite:** Zwei isochrone HS-Webcams belegen zusammen gut 6 KB pro
+  Mikroframe, nahe an der Grenze für periodische Übertragungen. Es gab vereinzelt
+  verlorene Pakete. Bulk-Geräte (HDMI-/Analog-Grabber) belasten diese Grenze nicht.
+- **Strom:** Mit Hub und drei Kameras am PC-USB-Port trennte sich beim Streamstart
+  mehrmals der USB-Seriell-Wandler. Mehrere Kameras brauchen eine eigene 5-V-Versorgung
+  (Hub mit Netzteil bzw. im Fahrzeug ein eigener Wandler).
 
 ---
 
@@ -381,7 +416,7 @@ Erkenntnisse:
 
 | # | Thema | Frage | Status |
 |---|---|---|---|
-| 2a | Zwei USB-Kameras über einen Hub | Hält der P4-Host mehrere UVC-Streams? Geht ein Full-Speed-Gerät hinter einem High-Speed-Hub (Split-Transaktionen)? Gemischt isochron/Bulk? | offen, Hub wird besorgt |
+| 2a | Mehrere USB-Kameras | Mehrere UVC-Streams, Full Speed hinter HS-Hub, zweite USB-Buchse | **erledigt**, siehe 6.4 (FS hinter Hub geht nicht; gemischt isochron/Bulk noch nicht gemessen) |
 | 2b | USB + WLAN gleichzeitig | Decoder und PPA bei zwei Quellen | **erledigt**, siehe 6.3 |
 | 3 | Terminal als Access Point | C6 als SoftAP über ESP-Hosted, mehrere Funkkameras als Station | offen |
 | 4 | Latenz | ms von der Kamera bis zum Display, pro Kameratyp | offen |
