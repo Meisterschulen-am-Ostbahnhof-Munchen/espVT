@@ -451,6 +451,7 @@ Methode stehen in `latency/` im Repo `JC8012P4A1C_I_W_Y_Compositor_PoC`.
 | 3 | Terminal als Access Point | C6 als SoftAP über ESP-Hosted, mehrere Funkkameras als Station | offen |
 | 4 | Latenz | ms von der Kamera bis zum Display, pro Kameratyp | **erledigt** (Foto-Methode), siehe 6.5; automatische Messung geplant |
 | 5 | Analog-zu-USB in einem Gerät | ohne HDMI-Zwischenstufe; spart vermutlich ein gepuffertes Bild (≈ 40 ms) | offen, Hardware fehlt |
+| 6 | Echter Wi-Fi-6-Access-Point | Terminal (C6, 802.11ax HE20, nur 2,4 GHz) und Funkkameras als Stationen an einem externen AP; Bildrate und Latenz bei belegtem Kanal gegen den AP der Kamera (6.3). Wi-Fi-6-Vorteile (OFDMA, BSS-Coloring, TWT) gibt es nur für HE-Stationen; die Freenove-S3-Kamera kann nur Wi-Fi 4. Wi-Fi-6-Kamera: Waveshare ESP32-P4-WIFI6-DB (P4 + C5, 2,4/5 GHz) bzw. ESP32-P4-WIFI6 (P4 + C6, 2,4 GHz) mit OV5647 an MIPI-CSI, MJPEG über den Hardware-JPEG-Encoder des P4 | offen, AP fehlt |
 
 **Einbau in espVT**
 
