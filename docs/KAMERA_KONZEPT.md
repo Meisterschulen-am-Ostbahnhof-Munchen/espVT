@@ -26,7 +26,7 @@ diesem Dokument sind dort gemessen, sofern nicht anders gekennzeichnet:
 **Nicht-Ziele (vorerst)**
 
 - **Kein Spiegelersatz** im Sinne von UN ECE R46 / ISO 16505. Das Kamerabild ist eine
-  Fahrhilfe. Die Latenz messen wir trotzdem (Abschnitt 8).
+  Fahrhilfe. Die Latenz messen wir trotzdem (Abschnitte 6.5 und 8).
 - Keine Videoaufzeichnung (später ggf. Standbild auf SD-Karte).
 - Keine IP-Kameras mit H.264/RTSP. Der ESP32-P4 hat einen H.264-Encoder, aber keinen
   Hardware-Decoder.
@@ -373,6 +373,36 @@ Erkenntnisse:
   mehrmals der USB-Seriell-Wandler. Mehrere Kameras brauchen eine eigene 5-V-Versorgung
   (Hub mit Netzteil bzw. im Fahrzeug ein eigener Wandler).
 
+### 6.5 Latenz Kamera → Display (15.11.2026)
+
+Glas zu Glas gemessen mit der Foto-Methode: Ein Handy mit Millisekunden-Stoppuhr steht vor
+der Kamera, ein zweites Handy fotografiert die Stoppuhr und das JC8012 gleichzeitig. Die
+Kamera läuft im Vollbild (L1). Genauigkeit ±10–20 ms, 5–7 Fotos pro Kette. Einzelwerte und
+Methode stehen in `latency/` im Repo `JC8012P4A1C_I_W_Y_Compositor_PoC`.
+
+| Kette | Median | Spanne |
+|---|---|---|
+| Vitade HD960, USB High Speed über Hub | 70 ms | 60–100 ms |
+| Logitech C270, USB High Speed über Hub | 80 ms | 60–100 ms |
+| „ESP32 CAM“, Buchse „Full Speed USB“ | 87 ms | 81–97 ms |
+| „ESP32 CAM“, Buchse „High speed USB“ | 101 ms | 68–104 ms |
+| PAL-Kamera → PAL-zu-HDMI → UGREEN | 135 ms | 130–150 ms |
+| WLAN-Kamera Freenove ESP32-S3 (800x600) | 135 ms | 97–150 ms |
+| AHD-Kamera → AHD-zu-HDMI → UGREEN | 149 ms | 135–150 ms |
+
+- **Alle Ketten liegen unter 200 ms.** Unter 100 ms schaffen nur direkt angeschlossene
+  USB-Kameras.
+- **Der Anteil des Terminals beträgt etwa 25–40 ms** und ist für alle Ketten gleich: Decoder,
+  PPA, Warten auf den Bildwechsel und Panel-Aufbau. Den Rest verursachen Kamera und
+  Übertragung.
+- **Analoge Kameras über HDMI-Wandler kosten 55–80 ms mehr.** Wandler und Grabber puffern
+  Bilder (40 ms pro Bild bei 25 fps). AHD ist dabei nicht schneller als PAL.
+- **Folgerung:** Für neue Rückfahrkameras USB-Kameras bevorzugen. Analoge Bestandskameras
+  sind möglich, aber langsamer. Ein direkter Analog-zu-USB-Wandler ist der nächste Test.
+- Eine automatische Messung mit LED und Fototransistor (±1 ms, mehrere hundert Messungen)
+  ist geplant. Der Aufbau steht in `latency/MESSAUFBAU.md`; eine eigene Platine ist nicht
+  nötig.
+
 ---
 
 ## 7. Einstellungen pro Kamera
@@ -388,8 +418,8 @@ Erkenntnisse:
 
 ## 8. Test und Abnahme
 
-- **Latenz** von der Kamera bis zum Display messen: z. B. Stoppuhr am Bildschirm abfilmen.
-  Richtwert für Fahrhilfen ≤ 200 ms.
+- **Latenz** von der Kamera bis zum Display messen (Methode und erste Werte in 6.5).
+  Richtwert für Fahrhilfen ≤ 200 ms, für Rückfahrkameras möglichst ≤ 100 ms.
 - **Dauerlauf** 8 h mit Kamera und VT gleichzeitig: Speicher, Temperatur, keine
   VT-Timeouts.
 - **Kamera abziehen und wieder anstecken** während des Betriebs, WLAN-Abriss.
@@ -419,8 +449,8 @@ Erkenntnisse:
 | 2a | Mehrere USB-Kameras | Mehrere UVC-Streams, Full Speed hinter HS-Hub, zweite USB-Buchse | **erledigt**, siehe 6.4 (FS hinter Hub geht nicht; gemischt isochron/Bulk noch nicht gemessen) |
 | 2b | USB + WLAN gleichzeitig | Decoder und PPA bei zwei Quellen | **erledigt**, siehe 6.3 |
 | 3 | Terminal als Access Point | C6 als SoftAP über ESP-Hosted, mehrere Funkkameras als Station | offen |
-| 4 | Latenz | ms von der Kamera bis zum Display, pro Kameratyp | offen |
-| 5 | Analog-zu-USB in einem Gerät | ohne HDMI-Zwischenstufe | offen, Hardware fehlt |
+| 4 | Latenz | ms von der Kamera bis zum Display, pro Kameratyp | **erledigt** (Foto-Methode), siehe 6.5; automatische Messung geplant |
+| 5 | Analog-zu-USB in einem Gerät | ohne HDMI-Zwischenstufe; spart vermutlich ein gepuffertes Bild (≈ 40 ms) | offen, Hardware fehlt |
 
 **Einbau in espVT**
 
