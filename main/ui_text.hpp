@@ -96,8 +96,8 @@
     X(DateYearMonthDay, "Date: YYYY-MM-DD", "Datum: JJJJ-MM-TT", "Data: RRRR-MM-DD")                            \
     X(TerminalNumber, "Terminal number: %u (1-32)", "Terminalnummer: %u (1-32)", "Numer terminala: %u (1-32)")  \
     X(WorkingArea, "Working area: %u x %u", "Arbeitsbereich: %u x %u", "Obszar roboczy: %u x %u")               \
-    X(TerminalCapabilities, "VT %u   version 6   %u x %u   12 keys", "VT %u   Version 6   %u x %u   12 Tasten", \
-      "VT %u   wersja 6   %u x %u   12 klawiszy")                                                               \
+    X(TerminalCapabilities, "VT %u   version 4   %u x %u   12 keys", "VT %u   Version 4   %u x %u   12 Tasten", \
+      "VT %u   wersja 4   %u x %u   12 klawiszy")                                                               \
     X(RestartRequired, "VT number and working area take effect after a restart",                                \
       "VT-Nummer und Arbeitsbereich gelten nach einem Neustart", "Numer VT i obszar roboczy wymagają restartu") \
     /* ISOBUS page */                                                                                           \
@@ -113,8 +113,8 @@
     /* AUX page */                                                                                              \
     X(AuxSubtitleLegacy, "AUX-O compatibility mode / VT version 2", "AUX-O-Kompatibilitätsmodus / VT-Version 2", \
       "Tryb zgodności AUX-O / VT wersja 2")                                                                     \
-    X(AuxSubtitle, "AUX-N type 2 / ISO 11783-6 VT version 6", "AUX-N Typ 2 / ISO 11783-6 VT-Version 6",          \
-      "AUX-N typ 2 / ISO 11783-6 VT wersja 6")                                                                  \
+    X(AuxSubtitle, "AUX-N type 2 / ISO 11783-6 VT version 4", "AUX-N Typ 2 / ISO 11783-6 VT-Version 4",          \
+      "AUX-N typ 2 / ISO 11783-6 VT wersja 4")                                                                  \
     X(AuxFunctions, "Machine functions: %u", "Maschinenfunktionen: %u", "Funkcje maszyny: %u")                 \
     X(AuxInputs, "Inputs: %u", "Eingänge: %u", "Wejścia: %u")                                                   \
     X(AuxLearning, "Learning...", "Anlernen...", "Uczenie...")                                                  \
