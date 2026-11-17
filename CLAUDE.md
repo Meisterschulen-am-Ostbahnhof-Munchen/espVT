@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-espVT is an experimental (not ISO 11783 certified) ISOBUS Virtual Terminal server (ISO 11783-6). Boards: the Waveshare ESP32-S3-Touch-LCD-7B (1024x600 RGB LCD, GT911 touch, TWAI CAN), the Waveshare ESP32-S3-Touch-LCD-5 in its 1024x600 version (GT911, CH422G IO expander, CAN on GPIO15/16) and, experimentally, the Guition JC8012P4A1C_I_W_Y (ESP32-P4, 800x1280 MIPI-DSI JD9365 used as 1280x800 landscape, GSL3680 touch, external CAN transceiver). It is built on ESP-IDF 6.1 with a vendored, locally modified AgIsoStack++. User-facing docs (README.md with an English translation in README.en.md, BRINGUP.md, GNSS_NTRIP.md, auxn_buttons_esp32/README.md) are written in Polish. Code and comments are in English.
+espVT is an experimental (not ISO 11783 certified) ISOBUS Virtual Terminal server (ISO 11783-6). Boards: the Waveshare ESP32-S3-Touch-LCD-7B (1024x600 RGB LCD, GT911 touch, TWAI CAN), the Waveshare ESP32-S3-Touch-LCD-5 in its 1024x600 version (GT911, CH422G IO expander, CAN on GPIO15/16) and, experimentally, the Guition JC8012P4A1C_I_W_Y (ESP32-P4, 800x1280 MIPI-DSI JD9365 used as 1280x800 landscape, GSL3680 touch, external CAN transceiver). It is built on ESP-IDF 6.1 with AgIsoStack++ as a submodule (trial branch, see below). User-facing docs (README.md with an English translation in README.en.md, BRINGUP.md, GNSS_NTRIP.md, auxn_buttons_esp32/README.md) are written in Polish. Code and comments are in English.
 
 The project is GPL-3.0-or-later (earlier MIT notice kept in `LICENSES/MIT-espVT.txt`); the switch came with the GPL-2.0-or-later Silead code in `components/esp_lcd_touch_gsl3680`.
 
@@ -79,9 +79,11 @@ Main modules:
 
 Most AgIsoStack-dependent code is wrapped in `#if ISOVT_ENABLE_AGISOSTACK` (Kconfig `ISOVT_ENABLE_AGISOSTACK`). Keep the `#else` stubs compiling.
 
-## Vendored AgIsoStack++
+## AgIsoStack++ submodule (trial)
 
-`third_party/AgIsoStack-plus-plus` is a modified copy, not a submodule. `ESPVT_UPSTREAM.md` records the upstream base commit and summarizes the local changes: TWAI reliability, VT pool processing, transport timing, and multi-producer CAN TX queue. Its `isobus` target gets `ISOVT_ESP_POOL_THREADS=1` from `main/CMakeLists.txt`. Changes to the stack belong there. If you add a local modification, note it in `ESPVT_UPSTREAM.md`.
+On this trial branch `third_party/AgIsoStack-plus-plus` is a git submodule of the Meisterschulen-am-Ostbahnhof-Munchen fork, branch `trial/espvt-integration`: upstream main plus the open PRs espVT needs (#949 parser with its own tree, #951 minimum lengths, #952 command queue in `update()`, #869 FreeRTOS receive yield, #793 multi-producer TX queue). Clone with `git clone --recurse-submodules` or run `git submodule update --init`.
+
+The stack has no lock for the working set list any more: commands are processed only in `update()`. `EspVirtualTerminalServer` holds its own `working_set_list_mutex` around `update()` and in every reader of the list outside it. `update_server()` also sets the pthread configuration of the update thread, so the object pool parsing thread that `update()` starts gets a 24 KB stack in PSRAM.
 
 ## Hardware cautions from docs
 

@@ -113,7 +113,6 @@ target_include_directories(${COMPONENT_LIB} PRIVATE "${LOGO_GENERATED_DIR}")
 
 if(CONFIG_ISOVT_ENABLE_AGISOSTACK)
     target_compile_definitions(${COMPONENT_LIB} PRIVATE ISOVT_ENABLE_AGISOSTACK=1)
-    target_compile_definitions(Isobus PUBLIC ISOVT_ESP_POOL_THREADS=1)
     target_link_libraries(Isobus PRIVATE idf::pthread idf::heap)
     target_link_libraries(${COMPONENT_LIB} PRIVATE isobus::Isobus isobus::HardwareIntegration isobus::Utility)
 endif()

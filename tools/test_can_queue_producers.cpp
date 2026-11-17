@@ -6,7 +6,7 @@
 int main()
 {
     constexpr unsigned producers = 4, perProducer = 50000;
-    LockFreeQueue<unsigned> queue(128);
+    MPSCQueue<unsigned> queue(128); // The CAN transmit queue type, filled from several threads
     std::atomic<unsigned> ready{0}, finished{0};
     std::atomic<bool> go{false};
     std::vector<std::thread> threads;

@@ -9,7 +9,9 @@
 #include "vt_scene_renderer.hpp"
 #include "vt_audio.hpp"
 
+#include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_pthread.h"
 #include "nvs.h"
 
 #if ISOVT_ENABLE_AGISOSTACK
@@ -22,6 +24,8 @@
 #include "isobus/isobus/isobus_virtual_terminal_objects.hpp"
 #include "isobus/isobus/isobus_virtual_terminal_server.hpp"
 #include "isobus/isobus/isobus_speed_distance_messages.hpp"
+#include "isobus/isobus/isobus_machine_speed_direction_constants.hpp"
+#include "isobus/isobus/isobus_machine_selected_speed.hpp"
 #include "isobus/hardware_integration/can_hardware_interface.hpp"
 #include "isobus/utility/system_timing.hpp"
 
@@ -57,7 +61,6 @@ std::uint8_t configured_soft_key_size()
 }
 
 std::uint32_t expected_object_pool_bytes = 0;
-std::uint32_t received_object_pool_bytes = 0;
 std::uint32_t last_object_pool_progress_timestamp_ms = 0;
 std::uint8_t last_object_pool_percent = 0;
 
@@ -110,12 +113,50 @@ public:
 
     void update_server()
     {
+        // The server reads and changes the working set list and the object pools only in update().
+        // The renderer and touch handling take the same lock before they read them.
+        const std::lock_guard<std::recursive_mutex> working_set_list_lock(working_set_list_mutex);
+        use_psram_stack_for_parsing_threads();
         update();
+    }
+
+    static void use_psram_stack_for_parsing_threads()
+    {
+        // update() starts the object pool parsing thread with std::thread, which takes the pthread
+        // configuration of this thread. Parsing only touches PSRAM objects, so its stack goes to PSRAM
+        // and leaves the scarce internal RAM to CAN, UART and DMA.
+        static thread_local bool configured = false;
+        if (configured)
+        {
+            return;
+        }
+        esp_pthread_cfg_t config = esp_pthread_get_default_config();
+        esp_pthread_get_cfg(&config);
+        config.stack_size = 24576;
+        config.stack_alloc_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
+        config.thread_name = "vt_pool";
+        config.inherit_cfg = false;
+        configured = (ESP_OK == esp_pthread_set_cfg(&config));
+    }
+
+    float object_pool_load_percent() const
+    {
+        const std::lock_guard<std::recursive_mutex> working_set_list_lock(working_set_list_mutex);
+        float result = 0.0F;
+        for (const auto &working_set : managedWorkingSetList)
+        {
+            const float percent = working_set->iop_load_percentage();
+            if ((percent > 0.0F) && (percent < 100.0F))
+            {
+                result = std::max(result, percent);
+            }
+        }
+        return result;
     }
 
     std::vector<std::shared_ptr<isobus::VirtualTerminalServerManagedWorkingSet>> get_renderable_working_sets() const
     {
-		const std::lock_guard<std::recursive_mutex> working_set_list_lock(managedWorkingSetListMutex);
+		const std::lock_guard<std::recursive_mutex> working_set_list_lock(working_set_list_mutex);
         std::vector<std::shared_ptr<isobus::VirtualTerminalServerManagedWorkingSet>> result;
         result.reserve(managedWorkingSetList.size());
         for (const auto &working_set : managedWorkingSetList)
@@ -130,7 +171,7 @@ public:
 
     std::vector<std::shared_ptr<isobus::VirtualTerminalServerManagedWorkingSet>> get_all_working_sets() const
     {
-        const std::lock_guard<std::recursive_mutex> working_set_list_lock(managedWorkingSetListMutex);
+        const std::lock_guard<std::recursive_mutex> working_set_list_lock(working_set_list_mutex);
         std::vector<std::shared_ptr<isobus::VirtualTerminalServerManagedWorkingSet>> result;
         for (const auto &working_set : managedWorkingSetList)
         {
@@ -181,7 +222,7 @@ public:
 
     bool activate_working_set(std::uint64_t name)
     {
-		const std::lock_guard<std::recursive_mutex> working_set_list_lock(managedWorkingSetListMutex);
+		const std::lock_guard<std::recursive_mutex> working_set_list_lock(working_set_list_mutex);
         for (const auto &working_set : managedWorkingSetList)
         {
             if ((client_name(working_set) == name) && is_selectable_working_set(working_set))
@@ -357,6 +398,7 @@ private:
     }
 
     std::shared_ptr<isobus::VirtualTerminalServerManagedWorkingSet> ui_active_working_set;
+    mutable std::recursive_mutex working_set_list_mutex; ///< Taken around update() and by every reader of the working set list outside it
 
 public:
     bool get_is_enough_memory(std::uint32_t requested_memory) const override
@@ -434,6 +476,40 @@ public:
         return object_pool_store::list_versions(client.get_full_name());
     }
 
+    std::vector<std::array<std::uint8_t, 32>> get_extended_versions(isobus::NAME) override
+    {
+        // Extended versions belong to VT version 5 and newer, and this terminal reports version 4
+        return {};
+    }
+
+    void handle_unexpected_working_set_shutdown(std::shared_ptr<isobus::VirtualTerminalServerManagedWorkingSet> working_set,
+                                                UnexpectedShutdownReason reason) override
+    {
+        ESP_LOGW(TAG, "Working set 0x%016llx shut down unexpectedly (reason %u)",
+                 static_cast<unsigned long long>(client_name(working_set)),
+                 static_cast<unsigned>(reason));
+        if (ui_active_working_set == working_set)
+        {
+            vt_scene_renderer::close_input_editor();
+            deactivate_working_set(client_name(working_set));
+            vt_scene_renderer::clear();
+            vt_view::set_status(ui_text::Id::StatusWorkingSetSuspended);
+        }
+    }
+
+    std::uint16_t abort_input(std::shared_ptr<isobus::VirtualTerminalServerManagedWorkingSet> working_set) override
+    {
+        const std::uint16_t object_id = working_set ? working_set->get_object_open_for_input() : isobus::NULL_OBJECT_ID;
+        if ((isobus::NULL_OBJECT_ID == object_id) || !vt_scene_renderer::is_input_editor_open())
+        {
+            return isobus::NULL_OBJECT_ID;
+        }
+        vt_scene_renderer::close_input_editor();
+        working_set->set_object_open_for_input(isobus::NULL_OBJECT_ID);
+        send_select_input_object_message(object_id, false, false, working_set->get_control_function());
+        return object_id;
+    }
+
     std::vector<std::uint8_t> get_supported_objects() const override
     {
         using Type = isobus::VirtualTerminalObjectType;
@@ -500,7 +576,7 @@ public:
         return object_pool_store::erase(client.get_full_name(), version_label);
     }
 
-    bool delete_all_versions(isobus::NAME client) override
+    bool delete_all_versions(std::uint8_t, isobus::NAME client) override
     {
         return object_pool_store::erase_all(client.get_full_name());
     }
@@ -520,30 +596,6 @@ public:
         finish_object_pool_progress();
         vt_view::set_status(ui_text::Id::StatusParsingPool);
         vt_view::on_object_pool_loaded(client_name(working_set), 0);
-    }
-
-    void transferred_object_pool_component_received(
-        std::uint32_t bytes,
-        std::shared_ptr<isobus::VirtualTerminalServerManagedWorkingSet> &working_set) const override
-    {
-        (void)working_set;
-        if (expected_object_pool_bytes == 0)
-        {
-            return;
-        }
-
-        received_object_pool_bytes = std::min(
-            expected_object_pool_bytes,
-            received_object_pool_bytes + bytes);
-        const auto percent = static_cast<std::uint8_t>(std::min<std::uint64_t>(
-            99,
-            (static_cast<std::uint64_t>(received_object_pool_bytes) * 100U) /
-                expected_object_pool_bytes));
-        if (percent != last_object_pool_percent)
-        {
-            last_object_pool_percent = percent;
-            vt_view::set_object_pool_download_progress(true, percent);
-        }
     }
 };
 
@@ -758,7 +810,6 @@ bool save_terminal_settings()
 void begin_object_pool_progress(std::uint32_t expected_bytes)
 {
     expected_object_pool_bytes = expected_bytes;
-    received_object_pool_bytes = 0;
     last_object_pool_percent = 0;
     last_object_pool_progress_timestamp_ms = 0;
     vt_view::set_object_pool_download_progress(true, 0);
@@ -767,7 +818,6 @@ void begin_object_pool_progress(std::uint32_t expected_bytes)
 void finish_object_pool_progress()
 {
     expected_object_pool_bytes = 0;
-    received_object_pool_bytes = 0;
     last_object_pool_percent = 100;
     vt_view::set_object_pool_download_progress(true, 100);
 }
@@ -786,32 +836,15 @@ void update_object_pool_progress()
     }
     last_object_pool_progress_timestamp_ms = now;
 
-    for (const auto &session : isobus::CANNetworkManager::CANNetwork.get_active_transport_protocol_sessions(0))
+    if (!terminal_server)
     {
-        if ((session->get_direction() != isobus::TransportProtocolSessionBase::Direction::Receive) ||
-            (session->get_parameter_group_number() != static_cast<std::uint32_t>(isobus::CANLibParameterGroupNumber::ECUtoVirtualTerminal)) ||
-            (session->get_data().size() < 1) ||
-            (session->get_data().get_byte(0) != 0x11))
-        {
-            continue;
-        }
-
-        std::uint32_t active_component_bytes = session->get_total_bytes_transferred();
-        if (active_component_bytes > 0)
-        {
-            --active_component_bytes; // The transfer command byte is not object-pool data.
-        }
-        const std::uint64_t received_bytes =
-            static_cast<std::uint64_t>(received_object_pool_bytes) + active_component_bytes;
-        const auto percent = static_cast<std::uint8_t>(std::min<std::uint64_t>(
-            99,
-            (received_bytes * 100U) / expected_object_pool_bytes));
-        if (percent != last_object_pool_percent)
-        {
-            last_object_pool_percent = percent;
-            vt_view::set_object_pool_download_progress(true, percent);
-        }
-        break;
+        return;
+    }
+    const auto percent = static_cast<std::uint8_t>(std::min(99.0F, terminal_server->object_pool_load_percent()));
+    if (percent != last_object_pool_percent)
+    {
+        last_object_pool_percent = percent;
+        vt_view::set_object_pool_download_progress(true, percent);
     }
 }
 
@@ -888,9 +921,8 @@ void update_virtual_terminal()
         }
         speed_last_update_ms = now;
 
-        using Speed = isobus::SpeedMessagesInterface;
-        const auto direction = velocity_fresh ? Speed::MachineDirection::Forward
-                                              : Speed::MachineDirection::NotAvailable;
+        const auto direction = velocity_fresh ? isobus::MachineDirection::Forward
+                                              : isobus::MachineDirection::NotAvailable;
         speed_messages->groundBasedSpeedTransmitData.set_machine_speed(speed_mm_per_second);
         speed_messages->groundBasedSpeedTransmitData.set_machine_distance(static_cast<std::uint32_t>(speed_distance_mm));
         speed_messages->groundBasedSpeedTransmitData.set_machine_direction_of_travel(direction);
@@ -899,14 +931,14 @@ void update_virtual_terminal()
         speed_messages->machineSelectedSpeedTransmitData.set_machine_distance(static_cast<std::uint32_t>(speed_distance_mm));
         speed_messages->machineSelectedSpeedTransmitData.set_machine_direction_of_travel(direction);
         speed_messages->machineSelectedSpeedTransmitData.set_speed_source(
-            velocity_fresh ? Speed::MachineSelectedSpeedData::SpeedSource::NavigationBasedSpeed
-                           : Speed::MachineSelectedSpeedData::SpeedSource::NotAvailable);
+            velocity_fresh ? isobus::MachineSelectedSpeedData::SpeedSource::NavigationBasedSpeed
+                           : isobus::MachineSelectedSpeedData::SpeedSource::NotAvailable);
         speed_messages->machineSelectedSpeedTransmitData.set_exit_reason_code(
-            static_cast<std::uint8_t>(velocity_fresh ? Speed::MachineSelectedSpeedData::ExitReasonCode::NoReasonAllClear
-                                                     : Speed::MachineSelectedSpeedData::ExitReasonCode::NotAvailable));
+            static_cast<std::uint8_t>(velocity_fresh ? isobus::MachineSelectedSpeedData::ExitReasonCode::NoReasonAllClear
+                                                     : isobus::MachineSelectedSpeedData::ExitReasonCode::NotAvailable));
         speed_messages->machineSelectedSpeedTransmitData.set_limit_status(
-            velocity_fresh ? Speed::MachineSelectedSpeedData::LimitStatus::NotLimited
-                           : Speed::MachineSelectedSpeedData::LimitStatus::NotAvailable);
+            velocity_fresh ? isobus::MachineSelectedSpeedData::LimitStatus::NotLimited
+                           : isobus::MachineSelectedSpeedData::LimitStatus::NotAvailable);
         speed_messages->update();
 
         if ((velocity_fresh != speed_was_valid) ||
@@ -1653,6 +1685,7 @@ bool open_input_editor(const std::shared_ptr<isobus::VTObject> &object,
             return false;
     }
     select_input_object(object, working_set);
+    working_set->set_object_open_for_input(object->get_id());
     render_working_set(working_set);
     return true;
 }
@@ -1664,6 +1697,7 @@ bool commit_input_editor(const vt_scene_renderer::InputEditorResult &result,
     {
         return false;
     }
+    working_set->set_object_open_for_input(isobus::NULL_OBJECT_ID);
     const auto object = working_set->get_object_by_id(result.object_id);
     if (!object)
     {
