@@ -212,6 +212,11 @@
       "Tryb AUX zapisany, uruchom terminal ponownie")                                                           \
     X(NoticeAuxModeFailed, "Saving the AUX mode failed", "Speichern des AUX-Modus fehlgeschlagen",              \
       "Nie udało się zapisać trybu AUX")                                                                        \
+    X(DiagnosticsTitle, "DIAGNOSTICS", "DIAGNOSE", "DIAGNOSTYKA") \
+    X(DiagnosticsOn, "Diagnostics panel: on", "Diagnosefeld: ein", "Diagnostyka nad menu: włączona") \
+    X(DiagnosticsOff, "Diagnostics panel: off", "Diagnosefeld: aus", "Diagnostyka nad menu: wyłączona") \
+    X(NoticeDiagnosticsSaved, "Diagnostics setting saved", "Diagnose-Einstellung gespeichert", "Diagnostyka: ustawienie zapisane") \
+    X(NoticeDiagnosticsFailed, "Saving the diagnostics setting failed", "Speichern der Diagnose-Einstellung fehlgeschlagen", "Błąd zapisu diagnostyki") \
     X(NoticeMuted, "Sound is muted", "Ton ist stumm", "Dźwięk jest wyciszony")                                  \
     X(NoticeRefreshStarted, "Device search started", "Gerätesuche gestartet", "Wyszukiwanie urządzeń uruchomione") \
     X(NoticeRefreshFailed, "Refreshing the network failed", "Netzwerk konnte nicht aktualisiert werden",        \
