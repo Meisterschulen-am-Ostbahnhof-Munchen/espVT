@@ -38,11 +38,16 @@
 #   build_<target>/                          build directory incl. its sdkconfig
 #   delivery/espVT-<version>-<target>.bin    merged image, flash at 0x0
 #
-# ESP-IDF is loaded from IDF_ACTIVATE (default: v6.1) when idf.py is not
-# already on PATH.
+# ESP-IDF is loaded from IDF_ACTIVATE (default: the newest installed v6.1.x)
+# when idf.py is not already on PATH.
 # ==============================================================================
 
-IDF_ACTIVATE="${IDF_ACTIVATE:-$HOME/.espressif/tools/activate_idf_v6.1.sh}"
+# The installer names the script after the full version (activate_idf_v6.1.1.sh),
+# so the newest v6.1.x is taken unless IDF_ACTIVATE names one.
+if [ -z "$IDF_ACTIVATE" ]; then
+    IDF_ACTIVATE="$(ls -1 "$HOME"/.espressif/tools/activate_idf_v6.1.sh "$HOME"/.espressif/tools/activate_idf_v6.1.*.sh 2>/dev/null | sort -V | tail -n 1)"
+    IDF_ACTIVATE="${IDF_ACTIVATE:-$HOME/.espressif/tools/activate_idf_v6.1.sh}"
+fi
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ALL_TARGETS="Waveshare7B Waveshare7B_RS232 Waveshare7B_NTRIP Waveshare5 JC8012P4"
 
