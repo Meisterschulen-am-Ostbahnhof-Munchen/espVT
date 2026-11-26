@@ -453,10 +453,18 @@ public:
         return configured_data_mask_size();
     }
 
-    void suspend_working_set(std::shared_ptr<isobus::VirtualTerminalServerManagedWorkingSet> working_set) override
+    void suspend_working_set(std::shared_ptr<isobus::VirtualTerminalServerManagedWorkingSet> working_set,
+                             std::uint8_t error_codes,
+                             std::uint16_t parent_of_faulting_object,
+                             std::uint16_t faulting_object,
+                             std::uint8_t object_pool_error_codes) override
     {
-        ESP_LOGW(TAG, "Suspending faulty working set 0x%016llx",
-                 static_cast<unsigned long long>(client_name(working_set)));
+        ESP_LOGW(TAG, "Suspending faulty working set 0x%016llx: error 0x%02X, object %u (parent %u), pool error 0x%02X",
+                 static_cast<unsigned long long>(client_name(working_set)),
+                 error_codes,
+                 faulting_object,
+                 parent_of_faulting_object,
+                 object_pool_error_codes);
         vt_view::set_status(ui_text::Id::StatusWorkingSetSuspended);
     }
 

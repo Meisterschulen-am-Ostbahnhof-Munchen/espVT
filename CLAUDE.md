@@ -46,7 +46,7 @@ python3 tools/test_rectangle_suppression.py   # draw_outline() from vt_scene_ren
 python3 tools/test_render_lock_order.py        # render_working_set() deadlock regression from isobus_terminal_server.cpp
 python3 tools/test_rcteensy_hydraulic_hold.py <path/to/RCteensy source>   # tests code from an external RCteensy project
 c++ -std=c++17 -pthread -Ithird_party/AgIsoStack-plus-plus/utility/include \
-  tools/test_can_queue_producers.cpp -o /tmp/q && /tmp/q   # multi-producer LockFreeQueue
+  tools/test_can_queue_producers.cpp -o /tmp/q && /tmp/q   # multi-producer MPSCQueue
 ```
 
 The Python tests don't link the firmware. They **extract function bodies from the real source by string anchors** and compile them with stubs. For example, `test_render_lock_order.py` slices from `bool render_working_set(` to `isobus::NAME make_terminal_name()`, and `test_rectangle_suppression.py` slices from `void draw_outline(` to `std::string clipped_text(`. If you rename, move or reorder those functions or their neighbours, update the anchors in the tests.
@@ -81,7 +81,7 @@ Most AgIsoStack-dependent code is wrapped in `#if ISOVT_ENABLE_AGISOSTACK` (Kcon
 
 ## AgIsoStack++ submodule (trial)
 
-On this trial branch `third_party/AgIsoStack-plus-plus` is a git submodule of the Meisterschulen-am-Ostbahnhof-Munchen fork, branch `trial/espvt-integration`: upstream main plus the open PRs espVT needs (#949 parser with its own tree, #951 minimum lengths, #952 command queue in `update()`, #869 FreeRTOS receive yield, #793 multi-producer TX queue). Clone with `git clone --recurse-submodules` or run `git submodule update --init`.
+On this trial branch `third_party/AgIsoStack-plus-plus` is a git submodule of the Meisterschulen-am-Ostbahnhof-Munchen fork, branch `trial/espvt-integration-2`: upstream main (which has #951 minimum lengths, #952 command queue in `update()` and #793 multi-producer TX queue) plus the open PRs espVT needs (#949 parser with its own tree, #869 FreeRTOS receive yield). Clone with `git clone --recurse-submodules` or run `git submodule update --init`.
 
 The stack has no lock for the working set list any more: commands are processed only in `update()`. `EspVirtualTerminalServer` holds its own `working_set_list_mutex` around `update()` and in every reader of the list outside it. `update_server()` also sets the pthread configuration of the update thread, so the object pool parsing thread that `update()` starts gets a 24 KB stack in PSRAM.
 
