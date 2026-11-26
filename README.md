@@ -113,7 +113,8 @@ dla kazdego uzywanego targetu.
 ## Budowanie
 
 Wymagane jest ESP-IDF 6.1 z obsluga ESP32-S3 i ESP32-P4. Skrypt `make_espVT.sh` sam laduje
-srodowisko z `~/.espressif/tools/activate_idf_v6.1.sh`, jezeli `idf.py` nie jest
+srodowisko z najnowszego `~/.espressif/tools/activate_idf_v6.1*.sh` (np.
+`activate_idf_v6.1.1.sh`), jezeli `idf.py` nie jest
 dostepne; inna instalacje mozna wskazac zmienna `IDF_ACTIVATE`.
 
 Projekt ma domyslnie `CONFIG_APP_NO_BLOBS=y`, aby nie linkowac binarnych

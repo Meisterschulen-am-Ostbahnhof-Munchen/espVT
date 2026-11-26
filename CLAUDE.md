@@ -14,7 +14,7 @@ The repo has two firmware projects:
 
 ## Build
 
-`./make_espVT.sh` is the build entry point. It imports the ESP-IDF environment from `IDF_ACTIVATE` (default `~/.espressif/tools/activate_idf_v6.1.sh`) when `idf.py` is not on PATH:
+`./make_espVT.sh` is the build entry point. It imports the ESP-IDF environment from `IDF_ACTIVATE` (default: the newest `~/.espressif/tools/activate_idf_v6.1*.sh`) when `idf.py` is not on PATH:
 
 ```sh
 ./make_espVT.sh                          # all targets -> delivery/espVT-<git describe>-<target>.bin (merged, flash at 0x0)

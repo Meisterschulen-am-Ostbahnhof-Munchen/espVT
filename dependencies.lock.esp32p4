@@ -38,7 +38,7 @@ dependencies:
   idf:
     source:
       type: idf
-    version: 6.1.0
+    version: 6.1.1
 direct_dependencies:
 - espressif/esp_lcd_jd9365
 - espressif/esp_lcd_touch
