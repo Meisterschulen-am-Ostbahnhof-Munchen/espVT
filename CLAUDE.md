@@ -14,7 +14,7 @@ The repo has two firmware projects:
 
 ## Build
 
-`./make_espVT.sh` is the build entry point. It imports the ESP-IDF environment from `IDF_ACTIVATE` (default `~/.espressif/tools/activate_idf_v6.1.sh`) when `idf.py` is not on PATH:
+`./make_espVT.sh` is the build entry point. It imports the ESP-IDF environment from `IDF_ACTIVATE` (default: the newest `~/.espressif/tools/activate_idf_v6.1*.sh`) when `idf.py` is not on PATH:
 
 ```sh
 ./make_espVT.sh                          # all targets -> delivery/espVT-<git describe>-<target>.bin (merged, flash at 0x0)
@@ -22,6 +22,8 @@ The repo has two firmware projects:
 ./make_espVT.sh flash JC8012P4 /dev/ttyACM5
 ./make_espVT.sh menuconfig Waveshare7B_NTRIP   # "ESP ISOBUS VT" menu: Kconfig in main/Kconfig.projbuild
 ```
+
+After an ESP-IDF update, idf.py refuses a build directory configured with the older version, so it needs one `force` build. That also deletes its `sdkconfig`: values set in menuconfig (`ISOVT_MANUFACTURER_CODE`, `ISOVT_IDENTITY_NUMBER`, Wi-Fi/NTRIP credentials) have to be set again, so note them first.
 
 Targets: `Waveshare7B`, `Waveshare7B_RS232` (release), `Waveshare7B_NTRIP`, `Waveshare5` (esp32s3) and `JC8012P4` (esp32p4); `default`/`rs232`/`ntrip`/`p4` are aliases. Configuration is layered like in logiBUS: `sdkconfig.defaults` (shared) + `sdkconfig.defaults.<chip>` + `sdkconfig.defaults.<Board>.<chip>` + optional `sdkconfig.defaults.rs232`/`.ntrip`. The top-level `CMakeLists.txt` puts each `sdkconfig` into its `build_<target>/` directory and uses `dependencies.lock.<chip>` (committed).
 

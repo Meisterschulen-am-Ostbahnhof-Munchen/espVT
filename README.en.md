@@ -116,7 +116,8 @@ target you use.
 
 ESP-IDF 6.1 with ESP32-S3 and ESP32-P4 support is required. If `idf.py` is not available,
 `make_espVT.sh` loads the environment from
-`~/.espressif/tools/activate_idf_v6.1.sh`; point the `IDF_ACTIVATE` variable at a
+the newest `~/.espressif/tools/activate_idf_v6.1*.sh` (for example
+`activate_idf_v6.1.1.sh`); point the `IDF_ACTIVATE` variable at a
 different installation if needed.
 
 The project uses `CONFIG_APP_NO_BLOBS=y` by default so that the binary Wi-Fi and
