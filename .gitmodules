@@ -1,4 +1,4 @@
 [submodule "third_party/AgIsoStack-plus-plus"]
 	path = third_party/AgIsoStack-plus-plus
 	url = https://github.com/Meisterschulen-am-Ostbahnhof-Munchen/AgIsoStack-plus-plus.git
-	branch = trial/espvt-integration-2
+	branch = trial/espvt-integration-3
