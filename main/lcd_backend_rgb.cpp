@@ -138,6 +138,18 @@ esp_err_t init()
     return ESP_OK;
 }
 
+bool supports_partial_present()
+{
+    // The draw buffer alternates between two framebuffers, so it doesn't hold the
+    // last frame.
+    return false;
+}
+
+esp_err_t present_rect(int, int, int, int)
+{
+    return ESP_ERR_NOT_SUPPORTED;
+}
+
 std::uint16_t *draw_buffer()
 {
     return frame_buffers[drawing_frame_index];

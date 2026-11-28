@@ -517,6 +517,7 @@ public:
 
     void transferred_object_pool_parse_start(std::shared_ptr<isobus::VirtualTerminalServerManagedWorkingSet> &working_set) const override
     {
+        vt_scene_renderer::request_full_redraw();
         finish_object_pool_progress();
         vt_view::set_status(ui_text::Id::StatusParsingPool);
         vt_view::on_object_pool_loaded(client_name(working_set), 0);
@@ -628,6 +629,8 @@ void service_post_transition_renders()
             post_transition_render_working_set.reset();
         }
     }
+    // Repeats the last partial update if there was one, instead of a full frame.
+    vt_scene_renderer::request_repeat_last_update();
     render_working_set(working_set);
 }
 
@@ -1168,6 +1171,76 @@ bool announce_language_for_working_set(
     return true;
 }
 
+// Notes for the renderer which object a working set's command changes, so a
+// value or colour change redraws only that object's area. Commands without a
+// visible effect are ignored; any other command makes the next render a full one.
+void note_display_change(const isobus::CANMessage &message, void *)
+{
+    const auto server = terminal_server;
+    if (!server || (message.get_destination_control_function() != server->get_internal_control_function()))
+    {
+        return;
+    }
+    const auto &data = message.get_data();
+    if (data.empty())
+    {
+        return;
+    }
+    // ISO 11783-6 function codes (isobus::VirtualTerminalBase::Function is protected).
+    switch (data[0])
+    {
+        case 0xA1: // Enable/Disable Object
+        case 0xA7: // Change Background Colour
+        case 0xA8: // Change Numeric Value
+        case 0xAA: // Change Font Attributes
+        case 0xAB: // Change Line Attributes
+        case 0xAC: // Change Fill Attributes
+        case 0xB1: // Change List Item
+        case 0xB3: // Change String Value
+            if (data.size() >= 3)
+            {
+                vt_scene_renderer::mark_object_changed(message.get_identifier().get_source_address(),
+                                                       static_cast<std::uint16_t>(data[1] | (data[2] << 8U)));
+            }
+            else
+            {
+                vt_scene_renderer::request_full_redraw();
+            }
+            break;
+
+        case 0xA3: // Control Audio Signal
+        case 0xA4: // Set Audio Volume
+        case 0xB9: // Get Attribute Value
+        case 0xC0: // Get Memory
+        case 0xC1: // Get Supported Widechars
+        case 0xC2: // Get Number Of Soft Keys
+        case 0xC3: // Get Text Font Data
+        case 0xC4: // Get Window Mask Data
+        case 0xC5: // Get Supported Objects
+        case 0xC6: // Screen Capture
+        case 0xC7: // Get Hardware
+        case 0xD0: // Store Version
+        case 0xD2: // Delete Version
+        case 0xD3: // Extended Get Versions
+        case 0xD4: // Extended Store Version
+        case 0xD6: // Extended Delete Version
+        case 0xDF: // Get Versions
+        case 0xFD: // Unsupported VT Function
+        case 0xFF: // Working Set Maintenance
+            break;
+
+        default:
+            // Responses to VT messages (0x00-0x0A) and AUX messages (0x20-0x27)
+            // don't change the display either.
+            if ((data[0] <= 0x0AU) || ((data[0] >= 0x20U) && (data[0] <= 0x27U)))
+            {
+                break;
+            }
+            vt_scene_renderer::request_full_redraw();
+            break;
+    }
+}
+
 void connect_view_events(EspVirtualTerminalServer &server)
 {
     server.get_on_repaint_event_dispatcher().add_listener([&server](const std::shared_ptr<isobus::VirtualTerminalServerManagedWorkingSet> &working_set) {
@@ -1301,6 +1374,8 @@ bool start()
     terminal_server = std::make_shared<EspVirtualTerminalServer>(terminal_control_function);
     connect_view_events(*terminal_server);
     terminal_server->initialize();
+    isobus::CANNetworkManager::CANNetwork.add_any_control_function_parameter_group_number_callback(
+        static_cast<std::uint32_t>(isobus::CANLibParameterGroupNumber::ECUtoVirtualTerminal), note_display_change, nullptr);
     configure_language_and_units(false);
     terminal_server->get_language_command_interface().initialize();
 

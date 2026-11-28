@@ -82,7 +82,7 @@ Steuergerät NAME 0xa00a80008b9ffed0, SA 140, VT-Version 6.
   App schreiben (`idf.py flash` bzw. `@flash_args`). Prüfen, ob das gemergte Image NVS aussparen soll
   (z. B. zwei Dateien oder Hinweis in README), und ob die Vorgabesprache Englisch sein sollte.
 
-## 4a. Display blitzt alle paar Sekunden kurz auf (JC8012P4) – später
+## 4a. Display blitzt alle paar Sekunden kurz auf (JC8012P4) – behoben
 
 - Symptom: kurzer Lichtblitz, Inhalt nicht erkennbar, alle paar Sekunden, während ein Working Set angezeigt wird.
 - Im Log keine Warnung (kein "DPI frame completion timed out", kein "PPA rotation failed").
@@ -90,6 +90,9 @@ Steuergerät NAME 0xa00a80008b9ffed0, SA 140, VT-Version 6.
   GNSS-Speed-TX?), auch ohne Bus? Kandidaten: jede Neuzeichnung des ganzen Bilds (Zahlenwert ändert sich jede
   Sekunde) und das Umschalten der DPI-Framebuffer in `lcd_backend_dsi.cpp::present()`; DPI-Takt wird von
   70 auf 80 MHz angepasst (`dsi_hal` Warnung beim Start); Hintergrundbeleuchtung.
+- Ursache: Der Treiber hob den DPI-Takt von 70 auf 80 MHz an; bei 160 MB/s aus dem PSRAM gingen der Anzeige
+  beim Zeichnen und Drehen ganzer Bilder kurz die Pixel aus (schwarzer Blitz). Fix: `DPI_CLOCK_MHZ = 60`
+  (genau einstellbar, ~51 Hz); dazu das teilweise Neuzeichnen (5b).
 
 ## 4. Menü "Maschinen": Versionslabel der gespeicherten Pools anzeigen – später
 
@@ -128,8 +131,12 @@ Steuergerät NAME 0xa00a80008b9ffed0, SA 140, VT-Version 6.
 ## 5b. LVGL als Unterbau? – entschieden: nein
 
 - Der VT-Renderer bleibt (auf ISO-Objekte zugeschnitten, LVGL-Widgets bringen eigenes Layout/Stil mit).
-- Später prüfen: nur geänderte Bereiche neu zeichnen (statt des ganzen Bilds bei jeder Änderung), evtl.
-  hilfreich für Punkt 4a; LVGL eventuell nur für lokales Menü und Statusbildschirm.
+- Umgesetzt: nur geänderte Bereiche neu zeichnen (Branch `feature/partial-redraw`). Nach Change Numeric/String
+  Value, Background Colour, Font/Line/Fill Attributes, Enable/Disable, List Item und gedrückten Buttons zeichnet
+  der Renderer nur die Rechtecke der betroffenen Objekte neu, die PPA dreht nur diese Blöcke. Alles andere
+  (Maskenwechsel, Makros, Objektzeiger, unbekannte Kommandos) zeichnet weiter das ganze Bild. Nur auf dem
+  JC8012P4; das RGB-Backend (Waveshare) zeichnet weiter ganze Bilder.
+- LVGL eventuell nur für lokales Menü und Statusbildschirm.
 
 ## 6. Darstellung mit AgIsoVirtualTerminal (halb)automatisch abgleichen – später
 

@@ -33,7 +33,11 @@ constexpr std::size_t FRAME_BYTES = FRAME_PIXELS * sizeof(std::uint16_t);
 // MIPI-DSI parameters of the vendor demo verified on this board.
 constexpr int DSI_LANE_COUNT = 2;
 constexpr int DSI_LANE_BITRATE_MBPS = 1500;
-constexpr int DPI_CLOCK_MHZ = 70;
+// The vendor demo asks for 70 MHz, which the driver can only meet by raising the
+// clock to 80 MHz. At 80 MHz the DPI reads 160 MB/s from PSRAM, and while a frame
+// is rendered and rotated it sometimes misses pixels: the screen flashes black
+// every few seconds. 60 MHz is met exactly and gives about 51 frames per second.
+constexpr int DPI_CLOCK_MHZ = 60;
 constexpr int DSI_PHY_LDO_CHANNEL = 3;
 constexpr int DSI_PHY_LDO_MILLIVOLTS = 2500;
 // PSRAM buffers are written by the CPU and read by DMA; align to the L2 cache line.
@@ -235,6 +239,55 @@ esp_err_t present()
     if (result == ESP_OK)
     {
         back_buffer_index ^= 1U;
+    }
+    return result;
+}
+
+bool supports_partial_present()
+{
+    return true;
+}
+
+esp_err_t present_rect(int x, int y, int width, int height)
+{
+    // Rotates only this block into the buffer being shown. The other buffer stays
+    // older, but the next full present() rewrites it completely. Writing into the
+    // shown buffer can tear inside the block for one refresh, which a changed
+    // value doesn't show.
+    std::uint16_t *target = panel_buffers[back_buffer_index ^ 1U];
+
+    ppa_srm_oper_config_t rotation = {};
+    rotation.in.buffer = landscape_buffer;
+    rotation.in.pic_w = board::LCD_WIDTH;
+    rotation.in.pic_h = board::LCD_HEIGHT;
+    rotation.in.block_w = width;
+    rotation.in.block_h = height;
+    rotation.in.block_offset_x = x;
+    rotation.in.block_offset_y = y;
+    rotation.in.srm_cm = PPA_SRM_COLOR_MODE_RGB565;
+    rotation.out.buffer = target;
+    rotation.out.buffer_size = FRAME_BYTES;
+    rotation.out.pic_w = board::PANEL_NATIVE_WIDTH;
+    rotation.out.pic_h = board::PANEL_NATIVE_HEIGHT;
+    // PPA angles turn counter-clockwise. A landscape block (x, y, w, h) lands at
+    // (y, LCD_WIDTH - x - w) for 90 degrees and at (LCD_HEIGHT - y - h, x) for 270.
+#if CONFIG_ISOVT_DISPLAY_ROTATION_270
+    rotation.rotation_angle = PPA_SRM_ROTATION_ANGLE_270;
+    rotation.out.block_offset_x = board::LCD_HEIGHT - y - height;
+    rotation.out.block_offset_y = x;
+#else
+    rotation.rotation_angle = PPA_SRM_ROTATION_ANGLE_90;
+    rotation.out.block_offset_x = y;
+    rotation.out.block_offset_y = board::LCD_WIDTH - x - width;
+#endif
+    rotation.out.srm_cm = PPA_SRM_COLOR_MODE_RGB565;
+    rotation.scale_x = 1.0F;
+    rotation.scale_y = 1.0F;
+    rotation.mode = PPA_TRANS_MODE_BLOCKING;
+    const esp_err_t result = ppa_do_scale_rotate_mirror(rotator, &rotation);
+    if (result != ESP_OK)
+    {
+        ESP_LOGW(TAG, "PPA block rotation failed: %s", esp_err_to_name(result));
     }
     return result;
 }

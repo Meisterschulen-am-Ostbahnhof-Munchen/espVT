@@ -175,6 +175,18 @@ HitTarget hit_test(std::uint16_t x, std::uint16_t y);
 // Draws this Button or Key pressed while the operator holds it; 0xFFFF for none.
 // The caller requests the render.
 void set_pressed_object(std::uint16_t object_id);
+
+// Partial redraw: when only noted objects changed since the last render, render()
+// redraws just the rectangles where they are shown (where the display supports it).
+// Any render without a note, or after request_full_redraw(), draws everything.
+// Source address of a change made by the VT itself on the displayed working set.
+constexpr std::uint8_t DISPLAYED_WORKING_SET = 0xFF;
+// Notes that an object of the working set at this source address changed in a way
+// that shows only in the object's own area (value, colour, attributes).
+void mark_object_changed(std::uint8_t source_address, std::uint16_t object_id);
+void request_full_redraw();
+// The next render without notes repeats the last partial one (trailing renders).
+void request_repeat_last_update();
 bool is_menu_open();
 void apply_terminal_action(TerminalAction action);
 void close_menu();
