@@ -420,6 +420,10 @@ FontRenderInfo font_info(RenderContext &context,
     return result;
 }
 
+// Proprietary width of a Button's border area in VT pixels. The 4 px match the
+// ISO-Designer preview, where a 72 x 72 child fills the face of an 80 x 80 Button.
+constexpr int BUTTON_BORDER_WIDTH = 4;
+
 void draw_outline(int x, int y, int width, int height, std::uint16_t colour_value,
                   int thickness = 2, std::uint8_t suppressed_edges = 0)
 {
@@ -1197,10 +1201,32 @@ void render_object(RenderContext &context,
             {
                 add_target(context, x, y, width, height, vt_scene_renderer::HitKind::Button, object->get_id(), button->get_key_code());
             }
-            // AgIsoVirtualTerminal leaves the button face and its proprietary
-            // border transparent. The pool's child/sibling graphics provide the
-            // visible control, while the Button itself remains the touch target.
-            render_children(context, object, x, y, depth + 1);
+            // ISO 11783-6 Button: a border area around the face (left out with
+            // No Border), the face filled with the background colour unless it is
+            // transparent, and the border drawn in the border colour unless it is
+            // suppressed. Children are placed relative to the face.
+            const bool no_border = button->get_option(isobus::Button::Options::NoBorder);
+            const int border = no_border ? 0 : std::min({ BUTTON_BORDER_WIDTH, width / 2, height / 2 });
+            const int face_x = x + border;
+            const int face_y = y + border;
+            const int face_width = width - (2 * border);
+            const int face_height = height - (2 * border);
+            const std::uint16_t face_colour = colour(context, object->get_background_color());
+            if (!button->get_option(isobus::Button::Options::TransparentBackground))
+            {
+                lcd_panel::fill_rect(face_x, face_y, face_width, face_height, face_colour);
+            }
+            if (!no_border && !button->get_option(isobus::Button::Options::SuppressBorder))
+            {
+                draw_outline(x, y, width, height, colour(context, button->get_border_colour()), border);
+            }
+            if (button->get_option(isobus::Button::Options::Latchable) &&
+                button->get_option(isobus::Button::Options::CurrentButtonStateIfLatchable))
+            {
+                // Latched: a proprietary inner frame on the face.
+                draw_outline(face_x, face_y, face_width, face_height, contrasting_text_colour(face_colour), 2);
+            }
+            render_children(context, object, face_x, face_y, depth + 1);
             break;
         }
 
