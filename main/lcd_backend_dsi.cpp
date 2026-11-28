@@ -242,4 +242,53 @@ esp_err_t present()
     }
     return result;
 }
+
+bool supports_partial_present()
+{
+    return true;
+}
+
+esp_err_t present_rect(int x, int y, int width, int height)
+{
+    // Rotates only this block into the buffer being shown. The other buffer stays
+    // older, but the next full present() rewrites it completely. Writing into the
+    // shown buffer can tear inside the block for one refresh, which a changed
+    // value doesn't show.
+    std::uint16_t *target = panel_buffers[back_buffer_index ^ 1U];
+
+    ppa_srm_oper_config_t rotation = {};
+    rotation.in.buffer = landscape_buffer;
+    rotation.in.pic_w = board::LCD_WIDTH;
+    rotation.in.pic_h = board::LCD_HEIGHT;
+    rotation.in.block_w = width;
+    rotation.in.block_h = height;
+    rotation.in.block_offset_x = x;
+    rotation.in.block_offset_y = y;
+    rotation.in.srm_cm = PPA_SRM_COLOR_MODE_RGB565;
+    rotation.out.buffer = target;
+    rotation.out.buffer_size = FRAME_BYTES;
+    rotation.out.pic_w = board::PANEL_NATIVE_WIDTH;
+    rotation.out.pic_h = board::PANEL_NATIVE_HEIGHT;
+    // PPA angles turn counter-clockwise. A landscape block (x, y, w, h) lands at
+    // (y, LCD_WIDTH - x - w) for 90 degrees and at (LCD_HEIGHT - y - h, x) for 270.
+#if CONFIG_ISOVT_DISPLAY_ROTATION_270
+    rotation.rotation_angle = PPA_SRM_ROTATION_ANGLE_270;
+    rotation.out.block_offset_x = board::LCD_HEIGHT - y - height;
+    rotation.out.block_offset_y = x;
+#else
+    rotation.rotation_angle = PPA_SRM_ROTATION_ANGLE_90;
+    rotation.out.block_offset_x = y;
+    rotation.out.block_offset_y = board::LCD_WIDTH - x - width;
+#endif
+    rotation.out.srm_cm = PPA_SRM_COLOR_MODE_RGB565;
+    rotation.scale_x = 1.0F;
+    rotation.scale_y = 1.0F;
+    rotation.mode = PPA_TRANS_MODE_BLOCKING;
+    const esp_err_t result = ppa_do_scale_rotate_mirror(rotator, &rotation);
+    if (result != ESP_OK)
+    {
+        ESP_LOGW(TAG, "PPA block rotation failed: %s", esp_err_to_name(result));
+    }
+    return result;
+}
 }

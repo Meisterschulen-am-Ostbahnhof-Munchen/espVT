@@ -23,6 +23,9 @@ constexpr std::size_t FRAME_PIXELS = static_cast<std::size_t>(board::LCD_WIDTH) 
 SemaphoreHandle_t frame_mutex = nullptr;
 std::uint16_t *frame = nullptr;
 bool frame_in_progress = false;
+std::uint32_t frame_generation_count = 0;
+bool frame_clip_active = false;
+lcd_panel::Rect frame_clip;
 
 struct ViewTransform
 {
@@ -431,6 +434,8 @@ esp_err_t begin_frame()
 
     frame = lcd_backend::draw_buffer();
     frame_in_progress = true;
+    frame_clip_active = false;
+    ++frame_generation_count;
     use_full_screen();
     return ESP_OK;
 }
@@ -470,12 +475,29 @@ void reset_view_transform()
     view_transform.scale_y_denominator = 1;
 }
 
+void apply_frame_clip()
+{
+    if (!frame_clip_active)
+    {
+        return;
+    }
+    const int left = std::max(view_transform.clip_x, frame_clip.x);
+    const int top = std::max(view_transform.clip_y, frame_clip.y);
+    const int right = std::min(view_transform.clip_x + view_transform.clip_width, frame_clip.x + frame_clip.width);
+    const int bottom = std::min(view_transform.clip_y + view_transform.clip_height, frame_clip.y + frame_clip.height);
+    view_transform.clip_x = left;
+    view_transform.clip_y = top;
+    view_transform.clip_width = std::max(0, right - left);
+    view_transform.clip_height = std::max(0, bottom - top);
+}
+
 void set_clip_rect(int x, int y, int width, int height)
 {
     view_transform.clip_x = to_lcd_x(x);
     view_transform.clip_y = to_lcd_y(y);
     view_transform.clip_width = std::max(0, to_lcd_x(x + width) - view_transform.clip_x);
     view_transform.clip_height = std::max(0, to_lcd_y(y + height) - view_transform.clip_y);
+    apply_frame_clip();
 }
 
 void reset_clip_rect()
@@ -484,6 +506,62 @@ void reset_clip_rect()
     view_transform.clip_y = view_transform.area_y;
     view_transform.clip_width = view_transform.area_width;
     view_transform.clip_height = view_transform.area_height;
+    apply_frame_clip();
+}
+
+void set_frame_clip(const Rect &rect)
+{
+    frame_clip = rect;
+    frame_clip_active = true;
+    reset_clip_rect();
+}
+
+void clear_frame_clip()
+{
+    frame_clip_active = false;
+    reset_clip_rect();
+}
+
+Rect to_lcd_rect(int x, int y, int width, int height)
+{
+    const int left = transform_x(x);
+    const int top = transform_y(y);
+    return Rect{ left, top, transform_x(x + width) - left, transform_y(y + height) - top };
+}
+
+std::uint32_t frame_generation()
+{
+    return frame_generation_count;
+}
+
+bool supports_partial_present()
+{
+    return lcd_backend::supports_partial_present();
+}
+
+esp_err_t present_rects(const Rect *rects, int count)
+{
+    if (!is_ready() || !frame_in_progress)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    esp_err_t result = ESP_OK;
+    for (int index = 0; (index < count) && (result == ESP_OK); ++index)
+    {
+        const int left = std::max(0, rects[index].x);
+        const int top = std::max(0, rects[index].y);
+        const int right = std::min(board::LCD_WIDTH, rects[index].x + rects[index].width);
+        const int bottom = std::min(board::LCD_HEIGHT, rects[index].y + rects[index].height);
+        if ((left < right) && (top < bottom))
+        {
+            result = lcd_backend::present_rect(left, top, right - left, bottom - top);
+        }
+    }
+    frame_clip_active = false;
+    frame_in_progress = false;
+    xSemaphoreGive(frame_mutex);
+    return result;
 }
 
 void use_full_screen()
@@ -528,6 +606,7 @@ esp_err_t present()
     }
 
     const esp_err_t result = lcd_backend::present();
+    frame_clip_active = false;
     frame_in_progress = false;
     xSemaphoreGive(frame_mutex);
     return result;
@@ -540,6 +619,10 @@ esp_err_t fill(std::uint16_t color)
         return ESP_ERR_INVALID_STATE;
     }
 
+    if (frame_clip_active)
+    {
+        return fill_rect_raw(frame_clip.x, frame_clip.y, frame_clip.width, frame_clip.height, color);
+    }
     fill_rgb565(frame, FRAME_PIXELS, color);
     return ESP_OK;
 }

@@ -18,6 +18,7 @@
 #include <memory>
 #include <mutex>
 #include <numeric>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -93,6 +94,29 @@ std::mutex scene_mutex;
 std::mutex hit_targets_mutex;
 std::vector<ScreenRect> hit_targets;
 bool scene_visible = false;
+
+// Partial redraw. A full render records the LCD rectangles where each object (and
+// the variables and attributes it shows) was drawn. When afterwards only known
+// objects change, the next render redraws just their rectangles.
+constexpr std::size_t MAX_PARTIAL_RECTS = 16;
+constexpr int MAX_PARTIAL_AREA_PERCENT = 40;
+std::mutex change_mutex;
+std::set<std::pair<std::uint8_t, std::uint16_t>> changed_objects; // (source address, object ID)
+bool full_redraw_requested = true;
+bool repeat_last_update_requested = false;
+bool recording_object_rects = false;
+std::map<std::uint16_t, std::vector<lcd_panel::Rect>> object_rects;
+struct SceneKey
+{
+    const void *working_set = nullptr;
+    std::uint16_t data_mask = 0xFFFF;
+    std::uint16_t soft_key_mask = 0xFFFF;
+    std::size_t object_count = 0;
+    std::uint32_t frame_generation = 0;
+    bool valid = false;
+};
+SceneKey last_scene;
+std::vector<lcd_panel::Rect> last_partial_rects;
 std::atomic_bool terminal_menu_open{ false };
 vt_scene_renderer::TerminalSettings terminal_settings;
 // Copy for readers on the CAN path: scene_mutex is held for a whole frame, and
@@ -1229,6 +1253,88 @@ void draw_arched_bar_graph(RenderContext &context,
     }
 }
 
+void record_rect(std::uint16_t object_id, const lcd_panel::Rect &rect)
+{
+    if ((object_id != NULL_OBJECT_ID) && (rect.width > 0) && (rect.height > 0))
+    {
+        object_rects[object_id].push_back(rect);
+    }
+}
+
+// Records where an object is drawn during a full render, also for the variable and
+// attribute objects whose change shows there.
+void record_object_rect(const std::shared_ptr<isobus::VTObject> &object, int x, int y)
+{
+    if (!recording_object_rects)
+    {
+        return;
+    }
+    const auto rect = lcd_panel::to_lcd_rect(x, y, object->get_width(), object->get_height());
+    record_rect(object->get_id(), rect);
+
+    using Type = isobus::VirtualTerminalObjectType;
+    switch (object->get_object_type())
+    {
+        case Type::InputString:
+        case Type::OutputString:
+        case Type::InputNumber:
+        case Type::OutputNumber:
+        {
+            const auto textual = std::static_pointer_cast<isobus::TextualVTObject>(object);
+            record_rect(textual->get_variable_reference(), rect);
+            record_rect(textual->get_font_attributes(), rect);
+            break;
+        }
+
+        case Type::InputBoolean:
+        {
+            const auto input = std::static_pointer_cast<isobus::InputBoolean>(object);
+            record_rect(input->get_variable_reference(), rect);
+            record_rect(input->get_foreground_colour_object_id(), rect);
+            break;
+        }
+
+        case Type::InputList:
+        case Type::OutputList:
+        case Type::OutputMeter:
+        case Type::OutputLinearBarGraph:
+        case Type::OutputArchedBarGraph:
+            record_rect(std::static_pointer_cast<isobus::VTObjectWithVariableReference>(object)->get_variable_reference(), rect);
+            break;
+
+        case Type::OutputLine:
+            record_rect(std::static_pointer_cast<isobus::OutputLine>(object)->get_line_attributes(), rect);
+            break;
+
+        case Type::OutputRectangle:
+        {
+            const auto shape = std::static_pointer_cast<isobus::OutputRectangle>(object);
+            record_rect(shape->get_line_attributes(), rect);
+            record_rect(shape->get_fill_attributes(), rect);
+            break;
+        }
+
+        case Type::OutputEllipse:
+        {
+            const auto shape = std::static_pointer_cast<isobus::OutputEllipse>(object);
+            record_rect(shape->get_line_attributes(), rect);
+            record_rect(shape->get_fill_attributes(), rect);
+            break;
+        }
+
+        case Type::OutputPolygon:
+        {
+            const auto shape = std::static_pointer_cast<isobus::OutputPolygon>(object);
+            record_rect(shape->get_line_attributes(), rect);
+            record_rect(shape->get_fill_attributes(), rect);
+            break;
+        }
+
+        default:
+            break;
+    }
+}
+
 void render_object(RenderContext &context,
                    const std::shared_ptr<isobus::VTObject> &object,
                    int x,
@@ -1239,6 +1345,7 @@ void render_object(RenderContext &context,
     {
         return;
     }
+    record_object_rect(object, x, y);
 
     using Type = isobus::VirtualTerminalObjectType;
     switch (object->get_object_type())
@@ -1600,6 +1707,10 @@ void render_soft_keys(RenderContext &context, const std::shared_ptr<isobus::VTOb
                    key->get_id(),
                    key_object->get_key_code(),
                    context.data_mask_id);
+        if (recording_object_rects)
+        {
+            record_rect(key->get_id(), lcd_panel::to_lcd_rect(x, y, layout.soft_key_width, layout.soft_key_height));
+        }
         set_logical_clip(x + CONTROL_PADDING,
                          y + CONTROL_PADDING,
                          layout.soft_key_width - 2 * CONTROL_PADDING,
@@ -2948,6 +3059,124 @@ void render_input_editor(std::vector<ScreenRect> &targets, RenderContext *contex
     draw_editor_key(targets, panel_x + 566, panel_y + 430, 140, 66, tr(Txt::KeyCancel), vt_scene_renderer::EditorAction::Cancel);
     draw_editor_key(targets, panel_x + 718, panel_y + 430, 140, 66, "OK", vt_scene_renderer::EditorAction::Confirm, '\0', 0, true);
 }
+
+// Takes the changes noted since the last render and, if they can be shown by
+// redrawing a few rectangles of the scene drawn last, returns those rectangles.
+bool plan_partial_redraw(const std::shared_ptr<isobus::VirtualTerminalServerManagedWorkingSet> &working_set,
+                         const ObjectTree &tree,
+                         std::uint16_t data_mask_id,
+                         std::uint16_t soft_key_mask_id,
+                         std::vector<lcd_panel::Rect> &rects)
+{
+    std::set<std::pair<std::uint8_t, std::uint16_t>> changes;
+    bool full = false;
+    bool repeat = false;
+    {
+        std::lock_guard<std::mutex> lock(change_mutex);
+        changes.swap(changed_objects);
+        full = full_redraw_requested;
+        full_redraw_requested = false;
+        repeat = repeat_last_update_requested;
+        repeat_last_update_requested = false;
+    }
+
+    if (full || !last_scene.valid || (last_scene.working_set != working_set.get()) ||
+        (last_scene.data_mask != data_mask_id) || (last_scene.soft_key_mask != soft_key_mask_id) ||
+        (last_scene.object_count != tree.size()) ||
+        (last_scene.frame_generation != lcd_panel::frame_generation()) ||
+        !lcd_panel::supports_partial_present() || terminal_settings.show_diagnostics ||
+        vt_scene_renderer::is_input_editor_open())
+    {
+        return false;
+    }
+
+    const auto control_function = working_set->get_control_function();
+    const std::uint8_t address = control_function ? control_function->get_address() : 0xFEU;
+    for (const auto &[source, object_id] : changes)
+    {
+        if ((source != address) && (source != vt_scene_renderer::DISPLAYED_WORKING_SET))
+        {
+            continue;
+        }
+        const auto object = find_object(tree, object_id);
+        // Macros or object pointers can change more than the object's own area.
+        if ((object == nullptr) || (object->get_number_macros() > 0) ||
+            (object->get_object_type() == isobus::VirtualTerminalObjectType::ObjectPointer))
+        {
+            return false;
+        }
+        const auto found = object_rects.find(object_id);
+        if (found == object_rects.end())
+        {
+            return false;
+        }
+        rects.insert(rects.end(), found->second.begin(), found->second.end());
+    }
+    if (rects.empty())
+    {
+        // A trailing render after a partial one repeats it; otherwise draw everything.
+        if (repeat && changes.empty() && !last_partial_rects.empty())
+        {
+            rects = last_partial_rects;
+            return true;
+        }
+        return false;
+    }
+
+    // One pixel more on each side for rounding, clamped to the LCD, overlaps merged.
+    for (auto &rect : rects)
+    {
+        const int left = std::max(0, rect.x - 1);
+        const int top = std::max(0, rect.y - 1);
+        const int right = std::min(board::LCD_WIDTH, rect.x + rect.width + 1);
+        const int bottom = std::min(board::LCD_HEIGHT, rect.y + rect.height + 1);
+        rect = lcd_panel::Rect{ left, top, std::max(0, right - left), std::max(0, bottom - top) };
+    }
+    bool merged = true;
+    while (merged)
+    {
+        merged = false;
+        for (std::size_t first = 0; (first < rects.size()) && !merged; ++first)
+        {
+            for (std::size_t second = first + 1; second < rects.size(); ++second)
+            {
+                const auto &a = rects[first];
+                const auto &b = rects[second];
+                if ((a.x <= b.x + b.width) && (b.x <= a.x + a.width) && (a.y <= b.y + b.height) && (b.y <= a.y + a.height))
+                {
+                    const int left = std::min(a.x, b.x);
+                    const int top = std::min(a.y, b.y);
+                    const int right = std::max(a.x + a.width, b.x + b.width);
+                    const int bottom = std::max(a.y + a.height, b.y + b.height);
+                    rects[first] = lcd_panel::Rect{ left, top, right - left, bottom - top };
+                    rects.erase(rects.begin() + static_cast<std::ptrdiff_t>(second));
+                    merged = true;
+                    break;
+                }
+            }
+        }
+    }
+    long area = 0;
+    for (const auto &rect : rects)
+    {
+        area += static_cast<long>(rect.width) * rect.height;
+    }
+    return (rects.size() <= MAX_PARTIAL_RECTS) &&
+           (area * 100 <= static_cast<long>(board::LCD_WIDTH) * board::LCD_HEIGHT * MAX_PARTIAL_AREA_PERCENT);
+}
+
+std::uint16_t soft_key_mask_of(const std::shared_ptr<isobus::VTObject> &data_mask)
+{
+    if (data_mask->get_object_type() == isobus::VirtualTerminalObjectType::DataMask)
+    {
+        return std::static_pointer_cast<isobus::DataMask>(data_mask)->get_soft_key_mask();
+    }
+    if (data_mask->get_object_type() == isobus::VirtualTerminalObjectType::AlarmMask)
+    {
+        return std::static_pointer_cast<isobus::AlarmMask>(data_mask)->get_soft_key_mask();
+    }
+    return NULL_OBJECT_ID;
+}
 #endif
 }
 
@@ -3004,9 +3233,13 @@ bool render(const std::shared_ptr<isobus::VirtualTerminalServerManagedWorkingSet
         ESP_LOGW(TAG, "No renderable data mask in working set");
         return false;
     }
+    const std::uint16_t scene_soft_key_mask_id = soft_key_mask_of(data_mask);
+    std::vector<lcd_panel::Rect> partial_rects;
+    const bool partial = plan_partial_redraw(working_set, tree, data_mask->get_id(), scene_soft_key_mask_id, partial_rects);
     if (lcd_panel::begin_frame() != ESP_OK)
     {
         ESP_LOGW(TAG, "Could not acquire an RGB frame for working set render");
+        last_scene.valid = false;
         return false;
     }
     vt_view::set_working_set_visible(true);
@@ -3020,6 +3253,8 @@ bool render(const std::shared_ptr<isobus::VirtualTerminalServerManagedWorkingSet
     };
 
     const auto layout = current_layout();
+    const auto draw_scene = [&]() {
+    lcd_panel::use_full_screen();
     lcd_panel::set_view_transform(layout.screen_x,
                                   0,
                                   layout.scale_numerator,
@@ -3101,15 +3336,71 @@ bool render(const std::shared_ptr<isobus::VirtualTerminalServerManagedWorkingSet
 
     lcd_panel::use_ui_area();
     render_input_editor(next_targets, &context);
+    };
 
-    if (lcd_panel::present() != ESP_OK)
+    if (partial)
     {
-        ESP_LOGW(TAG, "Could not present working set RGB frame");
-        return false;
+        // Redraw the whole scene clipped to each changed rectangle, so overlapping
+        // objects stay in order. Hit targets don't move, so the old ones stay.
+        for (const auto &rect : partial_rects)
+        {
+            lcd_panel::set_frame_clip(rect);
+            next_targets.clear();
+            draw_scene();
+        }
+        lcd_panel::clear_frame_clip();
+        if (lcd_panel::present_rects(partial_rects.data(), static_cast<int>(partial_rects.size())) != ESP_OK)
+        {
+            ESP_LOGW(TAG, "Could not present working set rectangles");
+            last_scene.valid = false;
+            return false;
+        }
+        last_partial_rects = std::move(partial_rects);
     }
+    else
     {
-        std::lock_guard<std::mutex> targets_lock(hit_targets_mutex);
-        hit_targets = std::move(next_targets);
+        object_rects.clear();
+        recording_object_rects = true;
+        draw_scene();
+        recording_object_rects = false;
+        record_rect(data_mask->get_id(),
+                    lcd_panel::Rect{ screen_x(layout.data_mask_x),
+                                     screen_y(0),
+                                     screen_width(layout.data_mask_x, layout.data_mask_size),
+                                     screen_height(0, layout.data_mask_size) });
+        record_rect(scene_soft_key_mask_id,
+                    lcd_panel::Rect{ screen_x(layout.soft_key_x),
+                                     screen_y(0),
+                                     screen_width(layout.soft_key_x, SOFT_KEY_COLUMNS * layout.soft_key_width),
+                                     screen_height(0, layout.data_mask_size) });
+        if (lcd_panel::present() != ESP_OK)
+        {
+            ESP_LOGW(TAG, "Could not present working set RGB frame");
+            last_scene.valid = false;
+            return false;
+        }
+        {
+            std::lock_guard<std::mutex> targets_lock(hit_targets_mutex);
+            hit_targets = std::move(next_targets);
+        }
+        last_partial_rects.clear();
+    }
+    last_scene = SceneKey{ working_set.get(), data_mask->get_id(), scene_soft_key_mask_id, tree.size(),
+                           lcd_panel::frame_generation(), true };
+    static std::uint32_t full_renders = 0;
+    static std::uint32_t partial_renders = 0;
+    static std::int64_t last_render_log_us = 0;
+    ++(partial ? partial_renders : full_renders);
+    const std::int64_t now_us = esp_timer_get_time();
+    if ((now_us - last_render_log_us) >= 5000000)
+    {
+        ESP_LOGD(TAG, "Renders in the last %lld s: %lu full, %lu partial",
+                 static_cast<long long>((now_us - last_render_log_us) / 1000000),
+                 static_cast<unsigned long>(full_renders),
+                 static_cast<unsigned long>(partial_renders));
+        full_renders = 0;
+        partial_renders = 0;
+        last_render_log_us = now_us;
     }
     scene_visible = true;
     return true;
@@ -3122,7 +3413,31 @@ bool render(const std::shared_ptr<isobus::VirtualTerminalServerManagedWorkingSet
 
 void set_pressed_object(std::uint16_t object_id)
 {
-    pressed_object_id.store(object_id);
+    const std::uint16_t previous = pressed_object_id.exchange(object_id);
+    mark_object_changed(DISPLAYED_WORKING_SET, previous);
+    mark_object_changed(DISPLAYED_WORKING_SET, object_id);
+}
+
+void mark_object_changed(std::uint8_t source_address, std::uint16_t object_id)
+{
+    if (object_id == NULL_OBJECT_ID)
+    {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(change_mutex);
+    changed_objects.emplace(source_address, object_id);
+}
+
+void request_full_redraw()
+{
+    std::lock_guard<std::mutex> lock(change_mutex);
+    full_redraw_requested = true;
+}
+
+void request_repeat_last_update()
+{
+    std::lock_guard<std::mutex> lock(change_mutex);
+    repeat_last_update_requested = true;
 }
 
 HitTarget hit_test(std::uint16_t x, std::uint16_t y)

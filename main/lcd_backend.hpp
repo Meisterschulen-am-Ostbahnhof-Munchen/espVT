@@ -14,4 +14,8 @@ std::uint16_t *draw_buffer();
 // Shows the draw buffer and waits until it has been scanned out. Afterwards
 // draw_buffer() may return a different buffer with older content.
 esp_err_t present();
+// True when draw_buffer() keeps the last presented frame and present_rect() works.
+bool supports_partial_present();
+// Shows one rectangle of the draw buffer (LCD pixels) without a full present.
+esp_err_t present_rect(int x, int y, int width, int height);
 }

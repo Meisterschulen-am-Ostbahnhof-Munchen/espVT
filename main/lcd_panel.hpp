@@ -17,10 +17,33 @@ enum class TextEncoding : std::uint8_t
     UTF8 = 0xFF, // terminal UI texts
 };
 
+// A rectangle in LCD pixels.
+struct Rect
+{
+    int x = 0;
+    int y = 0;
+    int width = 0;
+    int height = 0;
+};
+
 esp_err_t init();
 bool is_ready();
 esp_err_t begin_frame();
 esp_err_t present();
+// Partial update: the draw buffer keeps the last frame between frames, so a caller
+// can redraw a few rectangles (with set_frame_clip()) and show only those.
+// Counts begin_frame() calls, so a caller can tell whether someone else drew
+// into the buffer since its own last frame.
+std::uint32_t frame_generation();
+bool supports_partial_present();
+// Shows only these rectangles of the draw buffer and ends the frame.
+esp_err_t present_rects(const Rect *rects, int count);
+// Limits all drawing of the current frame to this LCD rectangle, on top of every
+// clip set with set_clip_rect(); fill() fills only the rectangle.
+void set_frame_clip(const Rect &rect);
+void clear_frame_clip();
+// LCD rectangle covered by a rectangle in current drawing coordinates.
+Rect to_lcd_rect(int x, int y, int width, int height);
 void set_view_transform(int offset_x, int offset_y, int scale_numerator, int scale_denominator);
 void set_view_transform_xy(int offset_x,
                            int offset_y,
