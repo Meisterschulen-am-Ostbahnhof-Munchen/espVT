@@ -33,7 +33,11 @@ constexpr std::size_t FRAME_BYTES = FRAME_PIXELS * sizeof(std::uint16_t);
 // MIPI-DSI parameters of the vendor demo verified on this board.
 constexpr int DSI_LANE_COUNT = 2;
 constexpr int DSI_LANE_BITRATE_MBPS = 1500;
-constexpr int DPI_CLOCK_MHZ = 70;
+// The vendor demo asks for 70 MHz, which the driver can only meet by raising the
+// clock to 80 MHz. At 80 MHz the DPI reads 160 MB/s from PSRAM, and while a frame
+// is rendered and rotated it sometimes misses pixels: the screen flashes black
+// every few seconds. 60 MHz is met exactly and gives about 51 frames per second.
+constexpr int DPI_CLOCK_MHZ = 60;
 constexpr int DSI_PHY_LDO_CHANNEL = 3;
 constexpr int DSI_PHY_LDO_MILLIVOLTS = 2500;
 // PSRAM buffers are written by the CPU and read by DMA; align to the L2 cache line.
