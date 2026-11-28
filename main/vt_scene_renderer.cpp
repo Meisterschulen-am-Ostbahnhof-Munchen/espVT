@@ -41,6 +41,9 @@ namespace
 constexpr char TAG[] = "vt_render";
 using Txt = ui_text::Id;
 
+// The Button or Key the operator is holding, NULL_OBJECT_ID (0xFFFF) for none.
+std::atomic<std::uint16_t> pressed_object_id{ 0xFFFF };
+
 const char *tr(Txt id)
 {
     return ui_text::get(id);
@@ -256,6 +259,30 @@ std::uint16_t contrasting_text_colour(std::uint16_t background)
     return brightness > 110U ? 0x0000 : 0xFFFF;
 }
 
+// Scales each RGB565 channel by numerator / denominator, saturating at full.
+std::uint16_t scale_colour(std::uint16_t colour_value, unsigned numerator, unsigned denominator)
+{
+    const auto channel = [numerator, denominator](std::uint16_t value, std::uint16_t maximum) {
+        return static_cast<std::uint16_t>(std::min<unsigned>(maximum, (value * numerator) / denominator));
+    };
+    const std::uint16_t red = channel((colour_value >> 11U) & 0x1FU, 0x1FU);
+    const std::uint16_t green = channel((colour_value >> 5U) & 0x3FU, 0x3FU);
+    const std::uint16_t blue = channel(colour_value & 0x1FU, 0x1FU);
+    return static_cast<std::uint16_t>((red << 11U) | (green << 5U) | blue);
+}
+
+// Mixes an RGB565 colour with white (towards = 0xFFFF) or black (0x0000).
+std::uint16_t mix_colour(std::uint16_t colour_value, std::uint16_t towards, unsigned percent)
+{
+    const auto channel = [percent](std::uint16_t from, std::uint16_t to) {
+        return static_cast<std::uint16_t>((from * (100U - percent) + to * percent) / 100U);
+    };
+    const std::uint16_t red = channel((colour_value >> 11U) & 0x1FU, (towards >> 11U) & 0x1FU);
+    const std::uint16_t green = channel((colour_value >> 5U) & 0x3FU, (towards >> 5U) & 0x3FU);
+    const std::uint16_t blue = channel(colour_value & 0x1FU, towards & 0x1FU);
+    return static_cast<std::uint16_t>((red << 11U) | (green << 5U) | blue);
+}
+
 std::shared_ptr<isobus::VTObject> find_object(const ObjectTree &tree, std::uint16_t object_id)
 {
     const auto iterator = tree.find(object_id);
@@ -451,6 +478,40 @@ std::string clipped_text(const std::string &text, int width, int character_width
     }
     const std::size_t capacity = static_cast<std::size_t>(width / character_width);
     return text.substr(0, capacity);
+}
+
+// Proprietary 3D look of Buttons and Keys in VT pixels: a bevel lit from the top
+// left. Raised: light top and left edges, dark bottom and right edges. Sunken (held
+// or latched): the other way round, and the content moves right and down. Like the
+// ISO-Designer preview, light doubles and dark halves the base colour, so the hue
+// stays (navy gets blue and dark navy); a base without a bright channel (black or
+// nearly) is mixed with white instead.
+constexpr int BEVEL_WIDTH = 3;
+constexpr int BEVEL_OFFSET_WHEN_SUNKEN = 2;
+
+void draw_bevel(int x, int y, int width, int height, std::uint16_t base, bool sunken, int edge_width = BEVEL_WIDTH)
+{
+    const int edge = std::min({ edge_width, width / 2, height / 2 });
+    if (edge <= 0)
+    {
+        return;
+    }
+    std::uint16_t light = scale_colour(base, 2U, 1U);
+    if (contrasting_text_colour(light) == 0xFFFF)
+    {
+        light = mix_colour(base, 0xFFFF, 50U);
+    }
+    const std::uint16_t dark = scale_colour(base, 1U, 2U);
+    const std::uint16_t top_left = sunken ? dark : light;
+    const std::uint16_t bottom_right = sunken ? light : dark;
+    for (int step = 0; step < edge; ++step)
+    {
+        // One ring per step, so the corners meet diagonally.
+        lcd_panel::fill_rect(x + step, y + step, width - (2 * step), 1, top_left);
+        lcd_panel::fill_rect(x + step, y + step, 1, height - (2 * step), top_left);
+        lcd_panel::fill_rect(x + step + 1, y + height - 1 - step, width - (2 * step) - 1, 1, bottom_right);
+        lcd_panel::fill_rect(x + width - 1 - step, y + step + 1, 1, height - (2 * step) - 1, bottom_right);
+    }
 }
 
 std::vector<std::string> split_text_lines(const std::string &text)
@@ -1203,30 +1264,31 @@ void render_object(RenderContext &context,
             }
             // ISO 11783-6 Button: a border area around the face (left out with
             // No Border), the face filled with the background colour unless it is
-            // transparent, and the border drawn in the border colour unless it is
-            // suppressed. Children are placed relative to the face.
+            // transparent, and the proprietary border unless it is suppressed.
+            // Children are placed relative to the face. The whole border area is a
+            // 3D bevel mixed from the border colour, drawn sunken while the Button is
+            // held or latched.
             const bool no_border = button->get_option(isobus::Button::Options::NoBorder);
+            const bool draw_border = !no_border && !button->get_option(isobus::Button::Options::SuppressBorder);
             const int border = no_border ? 0 : std::min({ BUTTON_BORDER_WIDTH, width / 2, height / 2 });
+            const bool sunken = (pressed_object_id.load() == object->get_id()) ||
+                                (button->get_option(isobus::Button::Options::Latchable) &&
+                                 button->get_option(isobus::Button::Options::CurrentButtonStateIfLatchable));
+            const std::uint16_t face_colour = colour(context, object->get_background_color());
             const int face_x = x + border;
             const int face_y = y + border;
             const int face_width = width - (2 * border);
             const int face_height = height - (2 * border);
-            const std::uint16_t face_colour = colour(context, object->get_background_color());
             if (!button->get_option(isobus::Button::Options::TransparentBackground))
             {
                 lcd_panel::fill_rect(face_x, face_y, face_width, face_height, face_colour);
             }
-            if (!no_border && !button->get_option(isobus::Button::Options::SuppressBorder))
+            if (draw_border)
             {
-                draw_outline(x, y, width, height, colour(context, button->get_border_colour()), border);
+                draw_bevel(x, y, width, height, colour(context, button->get_border_colour()), sunken, border);
             }
-            if (button->get_option(isobus::Button::Options::Latchable) &&
-                button->get_option(isobus::Button::Options::CurrentButtonStateIfLatchable))
-            {
-                // Latched: a proprietary inner frame on the face.
-                draw_outline(face_x, face_y, face_width, face_height, contrasting_text_colour(face_colour), 2);
-            }
-            render_children(context, object, face_x, face_y, depth + 1);
+            const int offset = sunken ? BEVEL_OFFSET_WHEN_SUNKEN : 0;
+            render_children(context, object, face_x + offset, face_y + offset, depth + 1);
             break;
         }
 
@@ -1510,6 +1572,7 @@ void render_soft_keys(RenderContext &context, const std::shared_ptr<isobus::VTOb
                 ++visible_designators;
             }
         }
+        const bool key_pressed = (pressed_object_id.load() == key->get_id());
         const std::uint16_t key_background = colour(context, key->get_background_color());
         lcd_panel::fill_rect(x + CONTROL_PADDING,
                              y + CONTROL_PADDING,
@@ -1520,7 +1583,14 @@ void render_soft_keys(RenderContext &context, const std::shared_ptr<isobus::VTOb
                      y + CONTROL_PADDING,
                      layout.soft_key_width - 2 * CONTROL_PADDING,
                      layout.soft_key_height - 2 * CONTROL_PADDING,
-                     contrasting_text_colour(key_background));
+                     0x0000,
+                     1);
+        draw_bevel(x + CONTROL_PADDING + 1,
+                   y + CONTROL_PADDING + 1,
+                   layout.soft_key_width - 2 * CONTROL_PADDING - 2,
+                   layout.soft_key_height - 2 * CONTROL_PADDING - 2,
+                   key_background,
+                   key_pressed);
         add_target(context,
                    x,
                    y,
@@ -1543,9 +1613,11 @@ void render_soft_keys(RenderContext &context, const std::shared_ptr<isobus::VTOb
         const int designator_screen_size = std::max(1, std::min(inner_screen_width, inner_screen_height));
         const int designator_screen_x = inner_screen_x + (inner_screen_width - designator_screen_size) / 2;
         const int designator_screen_y = inner_screen_y + (inner_screen_height - designator_screen_size) / 2;
-        const int designator_offset_x = designator_screen_x -
+        // A held Key is drawn sunken; its designator moves right and down with it.
+        const int sunken_offset = key_pressed ? std::max(1, screen_width(x, BEVEL_OFFSET_WHEN_SUNKEN)) : 0;
+        const int designator_offset_x = designator_screen_x + sunken_offset -
                                         designator_x * designator_screen_size / layout.soft_key_designator_size;
-        const int designator_offset_y = designator_screen_y -
+        const int designator_offset_y = designator_screen_y + sunken_offset -
                                         designator_y * designator_screen_size / layout.soft_key_designator_size;
         lcd_panel::set_view_transform(designator_offset_x,
                                       designator_offset_y,
@@ -3046,6 +3118,11 @@ bool render(const std::shared_ptr<isobus::VirtualTerminalServerManagedWorkingSet
     (void)working_sets;
     return false;
 #endif
+}
+
+void set_pressed_object(std::uint16_t object_id)
+{
+    pressed_object_id.store(object_id);
 }
 
 HitTarget hit_test(std::uint16_t x, std::uint16_t y)

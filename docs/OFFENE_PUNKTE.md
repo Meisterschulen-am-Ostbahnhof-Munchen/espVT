@@ -76,6 +76,21 @@ Steuergerät NAME 0xa00a80008b9ffed0, SA 140, VT-Version 6.
   Prüfen: Reihenfolge in `app_main.cpp` (Status-View vor dem Laden der Settings?) und Default-Sprache in
   `ui_text.hpp` / `vt_scene_renderer.cpp`.
 
+- Nachtrag: Jedes Flashen des gemergten Images (`delivery/…bin` ab 0x0) setzt die Einstellungen zurück. Das Image
+  reicht bis 0x240000 und enthält über dem NVS (0x9000–0xF000) nur 0xFF, löscht also Sprache und
+  `TerminalSettings`; die Vorgabe ist Polnisch. Für Entwicklungs-Flashes nur Bootloader, Partitionstabelle und
+  App schreiben (`idf.py flash` bzw. `@flash_args`). Prüfen, ob das gemergte Image NVS aussparen soll
+  (z. B. zwei Dateien oder Hinweis in README), und ob die Vorgabesprache Englisch sein sollte.
+
+## 4a. Display blitzt alle paar Sekunden kurz auf (JC8012P4) – später
+
+- Symptom: kurzer Lichtblitz, Inhalt nicht erkennbar, alle paar Sekunden, während ein Working Set angezeigt wird.
+- Im Log keine Warnung (kein "DPI frame completion timed out", kein "PPA rotation failed").
+- Zu klären: Farbe des Blitzes (weiß, schwarz, alter Bildinhalt?), Takt (1 s wie Zahlenwert/VT-Status, 5 s wie
+  GNSS-Speed-TX?), auch ohne Bus? Kandidaten: jede Neuzeichnung des ganzen Bilds (Zahlenwert ändert sich jede
+  Sekunde) und das Umschalten der DPI-Framebuffer in `lcd_backend_dsi.cpp::present()`; DPI-Takt wird von
+  70 auf 80 MHz angepasst (`dsi_hal` Warnung beim Start); Hintergrundbeleuchtung.
+
 ## 4. Menü "Maschinen": Versionslabel der gespeicherten Pools anzeigen – später
 
 - Heute zeigt das Menü pro Steuergerät nur "SA", "NAME" und "gespeicherte Versionen: N" sowie
@@ -89,7 +104,7 @@ Steuergerät NAME 0xa00a80008b9ffed0, SA 140, VT-Version 6.
 - Quelle: `object_pool_store` (Dateiname `<NAME low 32 bit>_<Label hex>.iop`) → Label aus dem Dateinamen
   zurückwandeln, Größe per `stat`.
 
-## 5. Buttons ohne Fläche und Rahmen → Change Background Colour unsichtbar – umgesetzt, Test am Board offen
+## 5. Buttons ohne Fläche und Rahmen → Change Background Colour unsichtbar – behoben, am Board getestet
 
 - Symptom (DIDO-Pool): Ein-/Ausgänge sind Buttons 80x80 (Hintergrund 8 grau, Rahmen 15 navy, Q latchable)
   mit transparenter Output Number darin. Auf espVT fehlen Fläche und Rahmen; Change Background Colour
@@ -102,6 +117,19 @@ Steuergerät NAME 0xa00a80008b9ffed0, SA 140, VT-Version 6.
   über die ganze Größe); Kinder im Inneren der Fläche; latched/gedrückt sichtbar (Bit 1); Disabled (Bit 4)
   proprietär, z. B. ausgegraut.
 - Bei der Umsetzung: mateo (jaworeA) als Autor seines Codes respektieren, Änderung mit Co-Authored-By.
+
+## 5a. Keine Rückmeldung beim Drücken von Buttons und Softkeys – behoben (Branch `feature/button-pressed-indication`)
+
+- Der Rahmenbereich (4 px) eines Buttons ist eine 3D-Kante aus der Rahmenfarbe: Licht = Farbe verdoppelt,
+  Schatten = halbiert (wie die ISO-Designer-Vorschau, Navy → Blau / dunkles Navy). Gedrückt oder eingerastet
+  umgekehrt, Inhalt 2 px nach rechts unten. Softkeys: 1 px schwarze Linie, 3 px Kante auf der Fläche.
+- Unterschied zum ISO-Designer: dort sitzt der Inhalt gedrückt eher höher; hier klassisch nach rechts unten.
+
+## 5b. LVGL als Unterbau? – entschieden: nein
+
+- Der VT-Renderer bleibt (auf ISO-Objekte zugeschnitten, LVGL-Widgets bringen eigenes Layout/Stil mit).
+- Später prüfen: nur geänderte Bereiche neu zeichnen (statt des ganzen Bilds bei jeder Änderung), evtl.
+  hilfreich für Punkt 4a; LVGL eventuell nur für lokales Menü und Statusbildschirm.
 
 ## 6. Darstellung mit AgIsoVirtualTerminal (halb)automatisch abgleichen – später
 
