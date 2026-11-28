@@ -147,6 +147,20 @@ Submodule bleibt AgIsoStack++. Abgleichen lässt sich das Ergebnis:
    (z. B. `ButtonComponent`, `OutputNumberComponent`), Liste der passenden Stellen in `vt_scene_renderer.cpp`,
    Entscheidung von Hand.
 
+## 6a. Touch nach ISO 11783-6 4.6.18 (Auskunft Professor-ISOBUS, 2026-11-28)
+
+- Multi-Touch ist nicht nötig: ohne gleichzeitige Betätigung (D.9 Get Hardware Response Byte 4, Bit 4 Softkeys,
+  Bit 5 Buttons = 0) ist nur eine Taste aktiv, eine zweite Berührung während der ersten wird ignoriert.
+  espVT meldet Byte 4 = `0x0F`, Bits 4/5 = 0 → passt. Pointing Event (H.6) hat genau einen Punkt.
+- Behoben (Branch `fix/touch-first-finger`): Loslassen erst, wenn alle Finger weg waren. Jetzt wird der erste
+  Finger an der Controller-ID verfolgt und sofort released, wenn er abhebt.
+- Offen: **Button wird während des Haltens ausgeblendet** (Hide, Maskenwechsel, Pool-Update): 4.6.18 verlangt
+  dann released an das Objekt und dass die Taste bis zum Loslassen ignoriert wird. Prüfen, ob espVT das tut.
+- Offen: **Get Hardware Byte 4 = `0x0F`** meldet auch Bit 2 (mehrere Audio-Frequenzen) und Bit 3 (einstellbare
+  Lautstärke). Auf dem JC8012P4 ist der Ton noch nicht portiert → dort falsche Angabe. Wert im vendored Stack
+  fest verdrahtet (`isobus_virtual_terminal_server.cpp`, GetHardwareMessage); sollte pro Board aus den
+  tatsächlichen Fähigkeiten kommen (beim Submodule-Wechsel upstream als virtuelle Funktion vorschlagen?).
+
 ## 7. Hardware-Notiz Adapterboard
 
 - Kein Signal an RX (`PIN:1 EDGE:0`): VIO am Transceiver fehlte, Ursache war eine schlechte Lötstelle
