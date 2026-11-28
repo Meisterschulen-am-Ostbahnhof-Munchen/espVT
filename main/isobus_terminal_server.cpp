@@ -2095,9 +2095,14 @@ bool on_touch_pressed(std::uint16_t x, std::uint16_t y)
     if (sent && ((target.kind == vt_scene_renderer::HitKind::Button) ||
                  (target.kind == vt_scene_renderer::HitKind::SoftKey)))
     {
-        std::lock_guard<std::mutex> lock(touch_mutex);
-        pressed_target = target;
-        last_key_held_timestamp_ms = isobus::SystemTiming::get_timestamp_ms();
+        {
+            std::lock_guard<std::mutex> lock(touch_mutex);
+            pressed_target = target;
+            last_key_held_timestamp_ms = isobus::SystemTiming::get_timestamp_ms();
+        }
+        // Show the operator that the Button or Key is held.
+        vt_scene_renderer::set_pressed_object(target.object_id);
+        render_working_set(working_set);
     }
     return sent;
 #else
@@ -2118,6 +2123,12 @@ void on_touch_released()
         pressed_target = {};
         last_key_held_timestamp_ms = 0;
         working_set = rendered_working_set.lock();
+    }
+    const bool key_was_held = (target.kind == vt_scene_renderer::HitKind::Button) ||
+                              (target.kind == vt_scene_renderer::HitKind::SoftKey);
+    if (key_was_held)
+    {
+        vt_scene_renderer::set_pressed_object(isobus::NULL_OBJECT_ID);
     }
     if ((target.kind == vt_scene_renderer::HitKind::None) || !terminal_server || !working_set)
     {
@@ -2190,6 +2201,10 @@ void on_touch_released()
         case vt_scene_renderer::HitKind::AuxInput:
         case vt_scene_renderer::HitKind::None:
             break;
+    }
+    if (key_was_held)
+    {
+        render_working_set(working_set);
     }
 #endif
 }

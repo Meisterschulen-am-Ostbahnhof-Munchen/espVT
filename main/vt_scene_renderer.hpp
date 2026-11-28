@@ -172,6 +172,9 @@ bool render(const std::shared_ptr<isobus::VirtualTerminalServerManagedWorkingSet
             const std::vector<std::shared_ptr<isobus::VirtualTerminalServerManagedWorkingSet>> &working_sets,
             const std::vector<std::shared_ptr<isobus::VirtualTerminalServerManagedWorkingSet>> &auxiliary_working_sets = {});
 HitTarget hit_test(std::uint16_t x, std::uint16_t y);
+// Draws this Button or Key pressed while the operator holds it; 0xFFFF for none.
+// The caller requests the render.
+void set_pressed_object(std::uint16_t object_id);
 bool is_menu_open();
 void apply_terminal_action(TerminalAction action);
 void close_menu();
