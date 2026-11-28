@@ -137,7 +137,7 @@ esp_err_t start()
         return result;
     }
 
-    const BaseType_t task_result = xTaskCreatePinnedToCore(touch_task, "gsl3680", 4096, nullptr, 4, &task_handle, 0);
+    const BaseType_t task_result = xTaskCreatePinnedToCore(touch_task, "gsl3680", touch::TASK_STACK_SIZE, nullptr, 4, &task_handle, 0);
     if (task_result != pdPASS)
     {
         task_handle = nullptr;
