@@ -44,19 +44,31 @@ void to_lcd(std::uint16_t raw_x, std::uint16_t raw_y, std::uint16_t &x, std::uin
 #endif
 }
 
+// ISO 11783-6 4.6.18: without simultaneous activation (Get Hardware byte 4 bits 4
+// and 5 are 0) only one Button or Key is active at a time, and another touch
+// while it is held is ignored. So the first finger is followed by its controller
+// ID: lifting it releases at once, even while other fingers stay, and a new
+// press needs all fingers lifted.
 void touch_task(void *)
 {
-    bool was_touching = false;
+    enum class State
+    {
+        Idle,
+        Tracking,
+        WaitForAllLifted,
+    };
+    State state = State::Idle;
+    std::uint16_t tracked_finger = 0;
     esp_err_t last_error = ESP_OK;
 
     while (true)
     {
-        esp_lcd_touch_point_data_t point = {};
+        esp_lcd_touch_point_data_t points[CONFIG_ESP_LCD_TOUCH_MAX_POINTS] = {};
         std::uint8_t count = 0;
         esp_err_t result = esp_lcd_touch_read_data(controller);
         if (result == ESP_OK)
         {
-            result = esp_lcd_touch_get_data(controller, &point, &count, 1);
+            result = esp_lcd_touch_get_data(controller, points, &count, CONFIG_ESP_LCD_TOUCH_MAX_POINTS);
         }
         if (result != ESP_OK)
         {
@@ -69,28 +81,46 @@ void touch_task(void *)
         else
         {
             last_error = ESP_OK;
-            if (count > 0)
+            switch (state)
             {
-                if (!was_touching)
-                {
-                    std::uint16_t x = 0;
-                    std::uint16_t y = 0;
-                    to_lcd(point.x, point.y, x, y);
-                    ESP_LOGI(TAG, "Touch raw=%u,%u lcd=%u,%u", point.x, point.y, x, y);
-                    if (!isovt::on_touch_pressed(x, y))
+                case State::Idle:
+                    if (count > 0)
                     {
-                        vt_view::on_touch(x, y, count);
+                        std::uint16_t x = 0;
+                        std::uint16_t y = 0;
+                        to_lcd(points[0].x, points[0].y, x, y);
+                        ESP_LOGI(TAG, "Touch raw=%u,%u lcd=%u,%u finger=%u", points[0].x, points[0].y, x, y,
+                                 points[0].strength);
+                        tracked_finger = points[0].strength;
+                        state = State::Tracking;
+                        if (!isovt::on_touch_pressed(x, y))
+                        {
+                            vt_view::on_touch(x, y, count);
+                        }
                     }
-                }
-                was_touching = true;
-            }
-            else
-            {
-                if (was_touching)
+                    break;
+
+                case State::Tracking:
                 {
-                    isovt::on_touch_released();
+                    bool still_down = false;
+                    for (std::uint8_t index = 0; index < count; ++index)
+                    {
+                        still_down = still_down || (points[index].strength == tracked_finger);
+                    }
+                    if (!still_down)
+                    {
+                        isovt::on_touch_released();
+                        state = (count > 0) ? State::WaitForAllLifted : State::Idle;
+                    }
+                    break;
                 }
-                was_touching = false;
+
+                case State::WaitForAllLifted:
+                    if (count == 0)
+                    {
+                        state = State::Idle;
+                    }
+                    break;
             }
         }
         vTaskDelay(pdMS_TO_TICKS(20));

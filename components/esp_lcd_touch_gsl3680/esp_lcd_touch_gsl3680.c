@@ -397,7 +397,12 @@ static bool esp_lcd_touch_gsl3680_get_xy(esp_lcd_touch_handle_t tp, uint16_t *x,
     {
         x[i] = XY_Coordinate[i].x_position;
         y[i] = XY_Coordinate[i].y_position;
-        // strength[i] = XY_Coordinate[i].finger_id;
+        // espVT: the strength field carries the controller's finger ID, so the
+        // caller can follow one finger while others touch or lift.
+        if (strength != NULL)
+        {
+            strength[i] = XY_Coordinate[i].finger_id;
+        }
     }
     
 
